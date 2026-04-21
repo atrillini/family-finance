@@ -24,18 +24,23 @@ export async function getRouteSupabaseAndUser(): Promise<RouteAuthContext | null
         return cookieStore.getAll();
       },
       setAll(cookiesToSet, _headers) {
-        cookiesToSet.forEach(({ name, value, options }) =>
-          cookieStore.set(name, value, options)
-        );
+        try {
+          cookiesToSet.forEach(({ name, value, options }) =>
+            cookieStore.set(name, value, options)
+          );
+        } catch {
+          // Chiamate read-only su cookies (es. durante render statico).
+        }
       },
     },
   });
 
   const {
     data: { user },
+    error,
   } = await supabase.auth.getUser();
 
-  if (!user) return null;
+  if (error || !user) return null;
   return { supabase, user };
 }
 

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { isGoCardlessConfigured } from "@/lib/gocardless";
-import { isSupabaseAdminConfigured } from "@/lib/supabase";
+import { getRouteSupabaseAndUser, unauthorizedJson } from "@/lib/supabase/route-handler";
+import { isSupabaseConfigured } from "@/lib/supabase";
 import { syncTransactions } from "@/lib/sync-transactions";
 
 export const runtime = "nodejs";
@@ -15,7 +16,7 @@ export const dynamic = "force-dynamic";
  * Gemini ed esegue l'upsert su `transactions` evitando duplicati. Aggiorna
  * anche saldo e `last_sync_at` sul record `accounts`.
  *
- * Ritorna un report con il numero di transazioni inserite e il nuovo saldo.
+ * Richiede sessione Supabase Auth (cookie).
  */
 export async function POST(request: Request) {
   if (!isGoCardlessConfigured()) {
@@ -24,12 +25,15 @@ export async function POST(request: Request) {
       { status: 500 }
     );
   }
-  if (!isSupabaseAdminConfigured()) {
+  if (!isSupabaseConfigured()) {
     return NextResponse.json(
-      { error: "Supabase service role non configurato." },
+      { error: "Supabase non configurato." },
       { status: 500 }
     );
   }
+
+  const auth = await getRouteSupabaseAndUser();
+  if (!auth) return unauthorizedJson();
 
   let body: { accountId?: string } = {};
   try {
@@ -50,7 +54,11 @@ export async function POST(request: Request) {
   }
 
   try {
-    const report = await syncTransactions(accountId);
+    const report = await syncTransactions(
+      accountId,
+      auth.supabase,
+      auth.user.id
+    );
     return NextResponse.json({ ok: true, report });
   } catch (error) {
     console.error("[/api/sync] Errore", error);

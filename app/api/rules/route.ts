@@ -1,10 +1,11 @@
 import { NextResponse } from "next/server";
-import {
-  getSupabaseAdminClient,
-  isSupabaseAdminConfigured,
-} from "@/lib/supabase";
+import { isSupabaseConfigured } from "@/lib/supabase";
 import type { CategorizationRuleRow } from "@/lib/supabase";
 import { TRANSACTION_CATEGORIES } from "@/lib/gemini";
+import {
+  getRouteSupabaseAndUser,
+  unauthorizedJson,
+} from "@/lib/supabase/route-handler";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -30,18 +31,22 @@ type IncomingRule = Partial<
   >
 >;
 
-/** GET /api/rules → lista tutte le regole (ordinate per priorità DESC). */
+/** GET /api/rules → lista le regole dell'utente corrente. */
 export async function GET() {
-  if (!isSupabaseAdminConfigured()) {
+  if (!isSupabaseConfigured()) {
     return NextResponse.json(
-      { error: "Supabase service role non configurato." },
+      { error: "Supabase non configurato." },
       { status: 500 }
     );
   }
-  const supabase = getSupabaseAdminClient();
-  const { data, error } = await supabase
+
+  const auth = await getRouteSupabaseAndUser();
+  if (!auth) return unauthorizedJson();
+
+  const { data, error } = await auth.supabase
     .from("categorization_rules")
     .select("*")
+    .eq("user_id", auth.user.id)
     .order("priority", { ascending: false })
     .order("created_at", { ascending: false });
 
@@ -51,14 +56,17 @@ export async function GET() {
   return NextResponse.json({ rules: data ?? [] });
 }
 
-/** POST /api/rules → crea una nuova regola. */
+/** POST /api/rules → crea una nuova regola per l'utente corrente. */
 export async function POST(request: Request) {
-  if (!isSupabaseAdminConfigured()) {
+  if (!isSupabaseConfigured()) {
     return NextResponse.json(
-      { error: "Supabase service role non configurato." },
+      { error: "Supabase non configurato." },
       { status: 500 }
     );
   }
+
+  const auth = await getRouteSupabaseAndUser();
+  if (!auth) return unauthorizedJson();
 
   let body: IncomingRule = {};
   try {
@@ -75,10 +83,12 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: validation.error }, { status: 400 });
   }
 
-  const supabase = getSupabaseAdminClient();
-  const { data, error } = await supabase
+  const { data, error } = await auth.supabase
     .from("categorization_rules")
-    .insert(validation.value)
+    .insert({
+      ...validation.value,
+      user_id: auth.user.id,
+    })
     .select("*")
     .single();
 

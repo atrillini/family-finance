@@ -4,6 +4,11 @@ import {
   getDefaultRedirectUrl,
   isGoCardlessConfigured,
 } from "@/lib/gocardless";
+import { isSupabaseConfigured } from "@/lib/supabase";
+import {
+  getRouteSupabaseAndUser,
+  unauthorizedJson,
+} from "@/lib/supabase/route-handler";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -36,6 +41,15 @@ export async function POST(request: Request) {
       { status: 500 }
     );
   }
+
+  if (!isSupabaseConfigured()) {
+    return NextResponse.json(
+      { error: "Supabase non configurato." },
+      { status: 500 }
+    );
+  }
+
+  if (!(await getRouteSupabaseAndUser())) return unauthorizedJson();
 
   let body: {
     institutionId?: string;

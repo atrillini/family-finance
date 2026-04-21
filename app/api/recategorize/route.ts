@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { isSupabaseAdminConfigured } from "@/lib/supabase";
+import { getRouteSupabaseAndUser, unauthorizedJson } from "@/lib/supabase/route-handler";
+import { isSupabaseConfigured } from "@/lib/supabase";
 import { recategorizeTransaction } from "@/lib/sync-transactions";
 
 export const runtime = "nodejs";
@@ -8,22 +9,20 @@ export const dynamic = "force-dynamic";
 /**
  * POST /api/recategorize
  *
- * Body: { transactionId: string }
+ * Body: { transactionId: string } | { transactionIds: string[] }
  *
- * Riesegue Gemini su una transazione già presente a DB e aggiorna i campi
- * `category`, `merchant`, `tags`, `is_subscription`. Usato dal pulsante
- * "Ricategorizza con IA" nella tabella transazioni.
- *
- * Richiede la service-role key perché scrive saltando RLS (stessa semantica
- * di `/api/sync`).
+ * Riesegue Gemini su transazioni già in DB. Richiede sessione Supabase Auth.
  */
 export async function POST(request: Request) {
-  if (!isSupabaseAdminConfigured()) {
+  if (!isSupabaseConfigured()) {
     return NextResponse.json(
-      { error: "Supabase service role non configurato." },
+      { error: "Supabase non configurato." },
       { status: 500 }
     );
   }
+
+  const auth = await getRouteSupabaseAndUser();
+  if (!auth) return unauthorizedJson();
 
   let body: { transactionId?: string; transactionIds?: string[] } = {};
   try {
@@ -35,10 +34,6 @@ export async function POST(request: Request) {
     );
   }
 
-  // Supporto per ricategorizzazione singola e batch. Quando arriva l'array
-  // lo processiamo in serie (la concorrenza verso Gemini è già limitata a
-  // livello di modulo in `sync-transactions` → qui teniamo la serializzazione
-  // così un 429 su una transazione non affonda l'intero batch).
   const ids = Array.isArray(body.transactionIds)
     ? body.transactionIds.map((s) => String(s).trim()).filter(Boolean)
     : body.transactionId
@@ -54,7 +49,11 @@ export async function POST(request: Request) {
 
   if (ids.length === 1) {
     try {
-      const row = await recategorizeTransaction(ids[0]);
+      const row = await recategorizeTransaction(
+        ids[0],
+        auth.supabase,
+        auth.user.id
+      );
       return NextResponse.json({ ok: true, transaction: row });
     } catch (err) {
       console.error("[/api/recategorize] errore", err);
@@ -65,13 +64,21 @@ export async function POST(request: Request) {
   }
 
   const results: Array<
-    | { id: string; ok: true; transaction: Awaited<ReturnType<typeof recategorizeTransaction>> }
+    | {
+        id: string;
+        ok: true;
+        transaction: Awaited<ReturnType<typeof recategorizeTransaction>>;
+      }
     | { id: string; ok: false; error: string }
   > = [];
 
   for (const id of ids) {
     try {
-      const row = await recategorizeTransaction(id);
+      const row = await recategorizeTransaction(
+        id,
+        auth.supabase,
+        auth.user.id
+      );
       results.push({ id, ok: true, transaction: row });
     } catch (err) {
       const message =

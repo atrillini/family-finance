@@ -1,5 +1,10 @@
 import { NextResponse } from "next/server";
 import { parseNaturalLanguageQuery } from "@/lib/gemini";
+import { isSupabaseConfigured } from "@/lib/supabase";
+import {
+  getRouteSupabaseAndUser,
+  unauthorizedJson,
+} from "@/lib/supabase/route-handler";
 
 export const runtime = "nodejs";
 
@@ -14,6 +19,15 @@ export const runtime = "nodejs";
  * La GEMINI_API_KEY resta server-side: il browser riceve solo il filtro parsato.
  */
 export async function POST(request: Request) {
+  if (!isSupabaseConfigured()) {
+    return NextResponse.json(
+      { error: "Supabase non configurato." },
+      { status: 500 }
+    );
+  }
+
+  if (!(await getRouteSupabaseAndUser())) return unauthorizedJson();
+
   let body: { query?: unknown };
   try {
     body = await request.json();

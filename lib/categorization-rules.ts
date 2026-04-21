@@ -1,6 +1,6 @@
 import "server-only";
-import { getSupabaseAdminClient } from "./supabase";
-import type { CategorizationRuleRow } from "./supabase";
+import type { SupabaseClient } from "@supabase/supabase-js";
+import type { CategorizationRuleRow, Database } from "./supabase";
 import type { TransactionAnalysis } from "./gemini";
 
 /**
@@ -11,11 +11,14 @@ import type { TransactionAnalysis } from "./gemini";
  * array vuoto per non far esplodere le sync. Loggiamo un warning così
  * l'utente si accorge se ha saltato la migrazione.
  */
-export async function loadCategorizationRules(): Promise<CategorizationRuleRow[]> {
-  const admin = getSupabaseAdminClient();
-  const { data, error } = await admin
+export async function loadCategorizationRules(
+  supabase: SupabaseClient<Database>,
+  userId: string
+): Promise<CategorizationRuleRow[]> {
+  const { data, error } = await supabase
     .from("categorization_rules")
     .select("*")
+    .eq("user_id", userId)
     .order("priority", { ascending: false })
     .order("created_at", { ascending: false });
 

@@ -4,9 +4,8 @@ import {
   isGoCardlessConfigured,
   resolveRequisitionId,
 } from "@/lib/gocardless";
-import {
-  isSupabaseAdminConfigured,
-} from "@/lib/supabase";
+import { isSupabaseConfigured } from "@/lib/supabase";
+import { getRouteSupabaseAndUser } from "@/lib/supabase/route-handler";
 import { upsertAccountFromRequisition } from "@/lib/sync-transactions";
 
 export const runtime = "nodejs";
@@ -52,14 +51,22 @@ export async function GET(request: Request) {
     );
   }
 
-  if (!isSupabaseAdminConfigured()) {
+  if (!isSupabaseConfigured()) {
     return NextResponse.json(
       {
         error:
-          "Supabase service role non è configurato. Imposta SUPABASE_SERVICE_ROLE_KEY in .env.local.",
+          "Supabase non configurato. Imposta NEXT_PUBLIC_SUPABASE_URL e NEXT_PUBLIC_SUPABASE_ANON_KEY.",
       },
       { status: 500 }
     );
+  }
+
+  const auth = await getRouteSupabaseAndUser();
+  if (!auth) {
+    const loginUrl = new URL("/login", request.url);
+    loginUrl.searchParams.set("next", "/");
+    loginUrl.searchParams.set("reason", "session");
+    return NextResponse.redirect(loginUrl);
   }
 
   const url = new URL(request.url);
@@ -156,12 +163,13 @@ export async function GET(request: Request) {
         "→ Supabase (requisition",
         requisitionId + ")"
       );
-      const row = await upsertAccountFromRequisition({
+      const row = await upsertAccountFromRequisition(auth.supabase, {
         gocardlessAccountId,
         requisitionId,
         institutionId,
         institutionName,
         institutionLogo,
+        userId: auth.user.id,
       });
       console.info("[/api/callback] account salvato:", {
         id: row.id,

@@ -1,12 +1,12 @@
 import "server-only";
 
 import { createHash } from "node:crypto";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import {
   fetchAccountSnapshot,
   type GoCardlessTransaction,
 } from "./gocardless";
 import { analyzeTransaction, type TransactionAnalysis } from "./gemini";
-import { getSupabaseAdminClient } from "./supabase";
 import type { AccountRow, Database, TransactionRow } from "./supabase";
 import {
   applyRules,
@@ -55,22 +55,23 @@ const AI_CONCURRENCY = Number(process.env.SYNC_AI_CONCURRENCY || 3);
  * - Fa un upsert su `transactions` usando `(account_id, external_id)` come chiave
  * - Aggiorna `balance` e `last_sync_at` sull'account
  *
- * Requisiti: `.env.local` con le variabili GoCardless + `SUPABASE_SERVICE_ROLE_KEY`.
+ * Requisiti: sessione utente valida (JWT nelle cookie) + variabili GoCardless.
  */
 export async function syncTransactions(
-  accountId: string
+  accountId: string,
+  supabase: SupabaseClient<Database>,
+  userId: string
 ): Promise<SyncReport> {
-  const supabase = getSupabaseAdminClient();
-
   const { data: account, error: accErr } = await supabase
     .from("accounts")
     .select("*")
     .eq("id", accountId)
+    .eq("user_id", userId)
     .single();
 
   if (accErr || !account) {
     throw new Error(
-      `Account ${accountId} non trovato su Supabase: ${accErr?.message ?? "record assente"}`
+      `Account ${accountId} non trovato o non autorizzato: ${accErr?.message ?? "record assente"}`
     );
   }
 
@@ -147,7 +148,7 @@ export async function syncTransactions(
   // Carichiamo una sola volta le regole utente e prepariamo il blocco di
   // prompt da passare a Gemini: in questo modo anche quando la regola non
   // matcha esattamente l'IA "vede" gli schemi che l'utente vuole rispettare.
-  const rules = await loadCategorizationRules();
+  const rules = await loadCategorizationRules(supabase, userId);
   const rulesBlock = formatRulesForPrompt(rules);
 
   // Statistiche per capire quanto ha pesato Gemini su questo batch.
@@ -174,6 +175,7 @@ export async function syncTransactions(
           account_id: account.id,
           external_id: t.external_id,
           date: t.date,
+          user_id: userId,
         };
         return row;
       }
@@ -199,6 +201,7 @@ export async function syncTransactions(
         account_id: account.id,
         external_id: t.external_id,
         date: t.date,
+        user_id: userId,
       };
       return row;
     }
@@ -321,15 +324,17 @@ export async function refreshDescriptions(
   options: {
     recategorizeAltro?: boolean;
     onlyIds?: string[];
-  } = {}
+  } = {},
+  supabase: SupabaseClient<Database>,
+  userId: string
 ): Promise<RefreshDescriptionsReport> {
   const { recategorizeAltro = false, onlyIds } = options;
-  const supabase = getSupabaseAdminClient();
 
   const { data: account, error: accErr } = await supabase
     .from("accounts")
     .select("*")
     .eq("id", accountId)
+    .eq("user_id", userId)
     .single();
 
   if (accErr || !account) {
@@ -451,7 +456,7 @@ export async function refreshDescriptions(
   let recategorizedCount = 0;
   if (recategorizeAltro && plans.length > 0) {
     // Carichiamo regole + rules-block una volta sola.
-    const userRules = await loadCategorizationRules();
+    const userRules = await loadCategorizationRules(supabase, userId);
     const rulesBlock = formatRulesForPrompt(userRules);
 
     const toRecategorize = plans.filter(({ row }) => {
@@ -550,14 +555,15 @@ export async function refreshDescriptions(
  * `amount`/`date`/`account_id` (quelli sono verità bancaria).
  */
 export async function recategorizeTransaction(
-  transactionId: string
+  transactionId: string,
+  supabase: SupabaseClient<Database>,
+  userId: string
 ): Promise<TransactionRow> {
-  const supabase = getSupabaseAdminClient();
-
   const { data: tx, error: readErr } = await supabase
     .from("transactions")
     .select("*")
     .eq("id", transactionId)
+    .eq("user_id", userId)
     .single();
 
   if (readErr || !tx) {
@@ -575,7 +581,7 @@ export async function recategorizeTransaction(
   // Prima di chiamare Gemini vediamo se una regola utente risolve da sola
   // la categorizzazione: se sì evitiamo la chiamata AI, è più veloce e
   // soprattutto più "obbediente" a quello che l'utente ha già istruito.
-  const rules = await loadCategorizationRules();
+  const rules = await loadCategorizationRules(supabase, userId);
   const ruleMatch = applyRules(rules, tx.description, tx.merchant);
 
   const update: Database["public"]["Tables"]["transactions"]["Update"] = {};
@@ -664,19 +670,22 @@ async function mapWithConcurrency<T, U>(
  * Crea (o aggiorna) un record `accounts` a partire dagli ID GoCardless
  * ottenuti dopo il callback di consenso. Viene eseguito dentro `/api/callback`.
  */
-export async function upsertAccountFromRequisition(params: {
-  gocardlessAccountId: string;
-  requisitionId: string;
-  institutionId: string;
-  institutionName?: string | null;
-  institutionLogo?: string | null;
-}): Promise<AccountRow> {
-  const supabase = getSupabaseAdminClient();
-
+export async function upsertAccountFromRequisition(
+  supabase: SupabaseClient<Database>,
+  params: {
+    gocardlessAccountId: string;
+    requisitionId: string;
+    institutionId: string;
+    institutionName?: string | null;
+    institutionLogo?: string | null;
+    userId: string;
+  }
+): Promise<AccountRow> {
   const { data: existing, error: existingErr } = await supabase
     .from("accounts")
     .select("*")
     .eq("gocardless_account_id", params.gocardlessAccountId)
+    .eq("user_id", params.userId)
     .maybeSingle();
 
   if (existingErr) {
@@ -748,6 +757,7 @@ export async function upsertAccountFromRequisition(params: {
       institution_id: params.institutionId,
       requisition_id: params.requisitionId,
       gocardless_account_id: params.gocardlessAccountId,
+      user_id: params.userId,
     })
     .select("*")
     .single();

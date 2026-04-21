@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
+import { isSupabaseConfigured } from "@/lib/supabase";
 import {
-  getSupabaseAdminClient,
-  isSupabaseAdminConfigured,
-} from "@/lib/supabase";
+  getRouteSupabaseAndUser,
+  unauthorizedJson,
+} from "@/lib/supabase/route-handler";
 import { validateRulePayload } from "../route";
 
 export const runtime = "nodejs";
@@ -10,14 +11,17 @@ export const dynamic = "force-dynamic";
 
 type Params = { params: Promise<{ id: string }> };
 
-/** PATCH /api/rules/:id → aggiorna una regola esistente. */
+/** PATCH /api/rules/:id → aggiorna una regola dell'utente corrente. */
 export async function PATCH(request: Request, { params }: Params) {
-  if (!isSupabaseAdminConfigured()) {
+  if (!isSupabaseConfigured()) {
     return NextResponse.json(
-      { error: "Supabase service role non configurato." },
+      { error: "Supabase non configurato." },
       { status: 500 }
     );
   }
+
+  const auth = await getRouteSupabaseAndUser();
+  if (!auth) return unauthorizedJson();
 
   const { id } = await params;
   if (!id) {
@@ -42,23 +46,23 @@ export async function PATCH(request: Request, { params }: Params) {
     return NextResponse.json({ error: validation.error }, { status: 400 });
   }
 
-  const supabase = getSupabaseAdminClient();
-  const { data, error, count } = await supabase
+  const { data, error } = await auth.supabase
     .from("categorization_rules")
-    .update(
-      { ...validation.value, updated_at: new Date().toISOString() },
-      { count: "exact" }
-    )
+    .update({
+      ...validation.value,
+      updated_at: new Date().toISOString(),
+    })
     .eq("id", id)
+    .eq("user_id", auth.user.id)
     .select("*")
     .single();
 
-  if (error || !data || count === 0) {
+  if (error || !data) {
     return NextResponse.json(
       {
         error:
           error?.message ??
-          `Regola ${id} non trovata o RLS sta bloccando l'UPDATE.`,
+          `Regola ${id} non trovata o non autorizzata.`,
       },
       { status: 404 }
     );
@@ -68,12 +72,15 @@ export async function PATCH(request: Request, { params }: Params) {
 
 /** DELETE /api/rules/:id */
 export async function DELETE(_request: Request, { params }: Params) {
-  if (!isSupabaseAdminConfigured()) {
+  if (!isSupabaseConfigured()) {
     return NextResponse.json(
-      { error: "Supabase service role non configurato." },
+      { error: "Supabase non configurato." },
       { status: 500 }
     );
   }
+
+  const auth = await getRouteSupabaseAndUser();
+  if (!auth) return unauthorizedJson();
 
   const { id } = await params;
   if (!id) {
@@ -83,18 +90,18 @@ export async function DELETE(_request: Request, { params }: Params) {
     );
   }
 
-  const supabase = getSupabaseAdminClient();
-  const { error, count } = await supabase
+  const { error, count } = await auth.supabase
     .from("categorization_rules")
     .delete({ count: "exact" })
-    .eq("id", id);
+    .eq("id", id)
+    .eq("user_id", auth.user.id);
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
   if (!count) {
     return NextResponse.json(
-      { error: `Regola ${id} non trovata (o bloccata da RLS).` },
+      { error: `Regola ${id} non trovata o non autorizzata.` },
       { status: 404 }
     );
   }

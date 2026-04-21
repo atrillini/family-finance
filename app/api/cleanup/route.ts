@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
+import { isSupabaseConfigured } from "@/lib/supabase";
 import {
-  getSupabaseAdminClient,
-  isSupabaseAdminConfigured,
-} from "@/lib/supabase";
+  getRouteSupabaseAndUser,
+  unauthorizedJson,
+} from "@/lib/supabase/route-handler";
 import { getSyncFloorDate } from "@/lib/sync-floor";
 
 export const runtime = "nodejs";
@@ -11,29 +12,19 @@ export const dynamic = "force-dynamic";
 /**
  * POST /api/cleanup
  *
- * Body JSON (tutti opzionali):
- *   {
- *     before?: string,       // "YYYY-MM-DD": elimina tutto ciò che è < before.
- *                            // Default: floor configurato (SYNC_MIN_DATE,
- *                            // default 2026-01-01).
- *     accountId?: string,    // limita l'operazione a un singolo account.
- *                            // Se omesso, cancella per TUTTI i conti.
- *     dryRun?: boolean       // se true non elimina, ritorna solo il conteggio.
- *   }
- *
- * Pensato per una pulizia una-tantum: "voglio partire pulito dal 2026 in poi".
- * È idempotente: eseguirlo due volte non cambia nulla dopo il primo giro.
- *
- * Nota: usa il service role (bypassa RLS) perché si tratta di un'operazione
- * amministrativa scatenata consapevolmente dall'utente.
+ * Elimina transazioni dell'utente corrente con `date` &lt; `before`.
+ * Opzionale `accountId`: deve essere un conto di proprietà dell'utente.
  */
 export async function POST(request: Request) {
-  if (!isSupabaseAdminConfigured()) {
+  if (!isSupabaseConfigured()) {
     return NextResponse.json(
-      { error: "Supabase service role non configurato." },
+      { error: "Supabase non configurato." },
       { status: 500 }
     );
   }
+
+  const auth = await getRouteSupabaseAndUser();
+  if (!auth) return unauthorizedJson();
 
   let body: { before?: string; accountId?: string; dryRun?: boolean } = {};
   try {
@@ -42,25 +33,43 @@ export async function POST(request: Request) {
     body = {};
   }
 
-  // Default: il floor corrente (solitamente 2026-01-01). L'utente può
-  // comunque forzare un taglio diverso passando `before` nel body.
   const before = (body.before ?? "").trim() || getSyncFloorDate();
   if (!/^\d{4}-\d{2}-\d{2}$/.test(before)) {
     return NextResponse.json(
-      { error: `Formato 'before' non valido: atteso YYYY-MM-DD, ricevuto "${before}".` },
+      {
+        error: `Formato 'before' non valido: atteso YYYY-MM-DD, ricevuto "${before}".`,
+      },
       { status: 400 }
     );
   }
 
-  const supabase = getSupabaseAdminClient();
+  const supabase = auth.supabase;
+  const userId = auth.user.id;
 
-  // Conteggio preventivo: utile sia per il dryRun sia per loggare quante
-  // righe stiamo per cancellare prima di eseguire davvero il DELETE.
+  if (body.accountId) {
+    const accId = body.accountId.trim();
+    const { data: acc, error: accErr } = await supabase
+      .from("accounts")
+      .select("id")
+      .eq("id", accId)
+      .eq("user_id", userId)
+      .maybeSingle();
+    if (accErr || !acc) {
+      return NextResponse.json(
+        { error: "accountId non trovato o non autorizzato." },
+        { status: 404 }
+      );
+    }
+  }
+
   let countQuery = supabase
     .from("transactions")
     .select("id", { count: "exact", head: true })
-    .lt("date", before);
-  if (body.accountId) countQuery = countQuery.eq("account_id", body.accountId);
+    .lt("date", before)
+    .eq("user_id", userId);
+  if (body.accountId) {
+    countQuery = countQuery.eq("account_id", body.accountId.trim());
+  }
 
   const { count: wouldDelete, error: countErr } = await countQuery;
   if (countErr) {
@@ -84,8 +93,11 @@ export async function POST(request: Request) {
   let delQuery = supabase
     .from("transactions")
     .delete({ count: "exact" })
-    .lt("date", before);
-  if (body.accountId) delQuery = delQuery.eq("account_id", body.accountId);
+    .lt("date", before)
+    .eq("user_id", userId);
+  if (body.accountId) {
+    delQuery = delQuery.eq("account_id", body.accountId.trim());
+  }
 
   const { count: deleted, error: delErr } = await delQuery;
   if (delErr) {
@@ -101,7 +113,7 @@ export async function POST(request: Request) {
     deleted ?? 0,
     "transazioni precedenti a",
     before,
-    body.accountId ? `(account ${body.accountId})` : "(tutti i conti)"
+    body.accountId ? `(account ${body.accountId})` : "(tutti i conti dell'utente)"
   );
 
   return NextResponse.json({

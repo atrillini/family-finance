@@ -3,8 +3,8 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev --turbopack --hostname localhost --port 3000",
-    "dev:webpack": "next dev --webpack --hostname localhost --port 3000",
+    "dev": "next dev --webpack --hostname localhost --port 3000",
+    "dev:turbo": "next dev --turbopack --hostname localhost --port 3000",
     "build": "next build",
     "start": "next start",
     "lint": "eslint"

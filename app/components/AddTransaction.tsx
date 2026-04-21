@@ -123,6 +123,14 @@ export default function AddTransaction({
     startTransition(async () => {
       try {
         const supabase = getSupabaseClient();
+        const {
+          data: { user },
+          error: userErr,
+        } = await supabase.auth.getUser();
+        if (userErr || !user) {
+          throw new Error("Devi essere autenticato per aggiungere transazioni.");
+        }
+
         const signedAmount =
           type === "expense" ? -Math.abs(parsedAmount) : Math.abs(parsedAmount);
 
@@ -134,6 +142,7 @@ export default function AddTransaction({
           tags: finalAnalysis?.tags ?? [],
           is_subscription: finalAnalysis?.is_subscription ?? false,
           account_id: accountId || null,
+          user_id: user.id,
         });
 
         if (error) throw error;

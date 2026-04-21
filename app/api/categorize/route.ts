@@ -1,5 +1,10 @@
 import { NextResponse } from "next/server";
 import { analyzeTransaction } from "@/lib/gemini";
+import { isSupabaseConfigured } from "@/lib/supabase";
+import {
+  getRouteSupabaseAndUser,
+  unauthorizedJson,
+} from "@/lib/supabase/route-handler";
 
 export const runtime = "nodejs";
 
@@ -17,6 +22,15 @@ export const runtime = "nodejs";
  * GEMINI_API_KEY non venga mai esposta al browser.
  */
 export async function POST(request: Request) {
+  if (!isSupabaseConfigured()) {
+    return NextResponse.json(
+      { error: "Supabase non configurato." },
+      { status: 500 }
+    );
+  }
+
+  if (!(await getRouteSupabaseAndUser())) return unauthorizedJson();
+
   let body: { description?: unknown };
   try {
     body = await request.json();

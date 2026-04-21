@@ -3,10 +3,11 @@ import {
   deleteRequisition,
   isGoCardlessConfigured,
 } from "@/lib/gocardless";
+import { isSupabaseConfigured } from "@/lib/supabase";
 import {
-  getSupabaseAdminClient,
-  isSupabaseAdminConfigured,
-} from "@/lib/supabase";
+  getRouteSupabaseAndUser,
+  unauthorizedJson,
+} from "@/lib/supabase/route-handler";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -21,23 +22,18 @@ export const dynamic = "force-dynamic";
  *     deleteAccount?: boolean       // default false — se true elimina anche la card del conto
  *   }
  *
- * Cosa fa:
- *   1. cancella la requisition su GoCardless (revoca del consenso bancario)
- *   2. azzera i campi `requisition_id`, `institution_id`, `gocardless_account_id`
- *      così il conto resta visibile ma torna "manuale"
- *   3. se `deleteTransactions`, elimina tutte le transazioni linkate all'account
- *   4. se `deleteAccount`, elimina il record `accounts` (e il `ON DELETE SET NULL`
- *      su `transactions.account_id` scollega automaticamente le righe residue)
- *
- * Ritorna un mini-report con i conteggi.
+ * Richiede sessione Supabase Auth; l'account deve appartenere all'utente (`user_id`).
  */
 export async function POST(request: Request) {
-  if (!isSupabaseAdminConfigured()) {
+  if (!isSupabaseConfigured()) {
     return NextResponse.json(
-      { error: "Supabase service role non configurato." },
+      { error: "Supabase non configurato." },
       { status: 500 }
     );
   }
+
+  const auth = await getRouteSupabaseAndUser();
+  if (!auth) return unauthorizedJson();
 
   let body: {
     accountId?: string;
@@ -61,35 +57,34 @@ export async function POST(request: Request) {
     );
   }
 
-  const supabase = getSupabaseAdminClient();
+  const supabase = auth.supabase;
 
   const { data: account, error: accErr } = await supabase
     .from("accounts")
     .select("*")
     .eq("id", accountId)
+    .eq("user_id", auth.user.id)
     .single();
 
   if (accErr || !account) {
     return NextResponse.json(
-      { error: `Account ${accountId} non trovato: ${accErr?.message ?? ""}` },
+      { error: `Account ${accountId} non trovato o non autorizzato.` },
       { status: 404 }
     );
   }
 
-  // 1) revoca il consenso su GoCardless (best-effort: non facciamo fallire
-  //    il flusso se la requisition non esiste più).
   let requisitionRevoked: boolean | null = null;
   if (account.requisition_id && isGoCardlessConfigured()) {
     requisitionRevoked = await deleteRequisition(account.requisition_id);
   }
 
-  // 2) transazioni collegate (opzionale)
   let transactionsDeleted = 0;
   if (body.deleteTransactions) {
     const { count, error: delTxErr } = await supabase
       .from("transactions")
       .delete({ count: "exact" })
-      .eq("account_id", accountId);
+      .eq("account_id", accountId)
+      .eq("user_id", auth.user.id);
     if (delTxErr) {
       return NextResponse.json(
         {
@@ -101,12 +96,12 @@ export async function POST(request: Request) {
     transactionsDeleted = count ?? 0;
   }
 
-  // 3) elimina account oppure scollegalo dai campi GoCardless
   if (body.deleteAccount) {
     const { error: delAccErr } = await supabase
       .from("accounts")
       .delete()
-      .eq("id", accountId);
+      .eq("id", accountId)
+      .eq("user_id", auth.user.id);
     if (delAccErr) {
       return NextResponse.json(
         {
@@ -124,7 +119,8 @@ export async function POST(request: Request) {
         gocardless_account_id: null,
         last_sync_at: null,
       })
-      .eq("id", accountId);
+      .eq("id", accountId)
+      .eq("user_id", auth.user.id);
     if (updErr) {
       return NextResponse.json(
         {

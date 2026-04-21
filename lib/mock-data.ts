@@ -8,6 +8,7 @@ export type Account = AccountRow;
  * vengono referenziati dai mock transactions tramite `account_id`.
  */
 const MOCK_ACCOUNT_DEFAULTS = {
+  user_id: null,
   iban: null,
   institution_id: null,
   requisition_id: null,
@@ -54,7 +55,11 @@ export const MOCK_ACCOUNTS: Account[] = [
   },
 ];
 
-const MOCK_TX_DEFAULTS = { external_id: null, is_transfer: false } as const;
+const MOCK_TX_DEFAULTS = {
+  external_id: null,
+  is_transfer: false,
+  user_id: null,
+} as const;
 
 export const MOCK_TRANSACTIONS: Transaction[] = [
   {
