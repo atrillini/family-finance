@@ -1,26 +1,172 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #f5f5f7;
+  --foreground: #0a0a0a;
+  --surface: #ffffff;
+  --surface-muted: #f2f2f4;
+  --border: rgba(0, 0, 0, 0.06);
+  --border-strong: rgba(0, 0, 0, 0.1);
+  --muted-foreground: #6b6b72;
+  --accent: #0a84ff;
+  --income: #30d158;
+  --expense: #ff453a;
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
+  --color-surface: var(--surface);
+  --color-surface-muted: var(--surface-muted);
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-income: var(--income);
+  --color-expense: var(--expense);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+    --background: #000000;
+    --foreground: #f5f5f7;
+    --surface: #111113;
+    --surface-muted: #1c1c1e;
+    --border: rgba(255, 255, 255, 0.08);
+    --border-strong: rgba(255, 255, 255, 0.14);
+    --muted-foreground: #98989f;
   }
+}
+
+* {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-sans), -apple-system, BlinkMacSystemFont, "SF Pro Display",
+    "Segoe UI", sans-serif;
+  letter-spacing: -0.011em;
+}
+
+/* Apple-style card surface */
+.card-surface {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 1.25rem;
+  box-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.04),
+    0 8px 24px rgba(0, 0, 0, 0.04);
+}
+
+@media (prefers-color-scheme: dark) {
+  .card-surface {
+    box-shadow:
+      0 1px 2px rgba(0, 0, 0, 0.4),
+      0 8px 24px rgba(0, 0, 0, 0.3);
+  }
+}
+
+/* Hero card – mimics Apple Card front */
+.hero-card {
+  position: relative;
+  overflow: hidden;
+  border-radius: 1.75rem;
+  color: #fff;
+  background:
+    radial-gradient(120% 120% at 0% 0%, rgba(255, 255, 255, 0.25) 0%, transparent 55%),
+    radial-gradient(120% 120% at 100% 100%, rgba(10, 132, 255, 0.45) 0%, transparent 60%),
+    linear-gradient(135deg, #1d1d1f 0%, #2c2c2e 55%, #1c1c1e 100%);
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.08) inset,
+    0 30px 60px -20px rgba(0, 0, 0, 0.5);
+}
+
+.hero-card::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(
+    80% 60% at 80% 0%,
+    rgba(255, 255, 255, 0.12) 0%,
+    transparent 70%
+  );
+  pointer-events: none;
+}
+
+/* Markdown tipografico per la risposta dell'AI */
+.ai-answer p {
+  margin: 0 0 0.6em;
+}
+.ai-answer p:last-child {
+  margin-bottom: 0;
+}
+.ai-answer strong {
+  font-weight: 600;
+  color: var(--foreground);
+}
+.ai-answer ul,
+.ai-answer ol {
+  margin: 0.4em 0 0.8em 1.25em;
+  padding: 0;
+}
+.ai-answer li {
+  margin: 0.25em 0;
+}
+.ai-answer ul li {
+  list-style: disc;
+}
+.ai-answer ol li {
+  list-style: decimal;
+}
+.ai-answer h1,
+.ai-answer h2,
+.ai-answer h3 {
+  margin: 0.6em 0 0.3em;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+.ai-answer h1 {
+  font-size: 17px;
+}
+.ai-answer h2 {
+  font-size: 15px;
+}
+.ai-answer h3 {
+  font-size: 14px;
+}
+.ai-answer code {
+  background: var(--surface-muted);
+  padding: 0.1em 0.35em;
+  border-radius: 4px;
+  font-family: var(--font-mono), ui-monospace, monospace;
+  font-size: 12.5px;
+}
+.ai-answer a {
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.ai-answer blockquote {
+  margin: 0.5em 0;
+  padding: 0.25em 0.75em;
+  border-left: 3px solid var(--border-strong);
+  color: var(--muted-foreground);
+}
+
+/* Subtle scrollbars */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border-radius: 999px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
 }

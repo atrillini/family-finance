@@ -1,0 +1,100 @@
+/*
+ * Override leggeri per react-day-picker v9 che allineano il calendario al
+ * tema Tailwind custom dell'app (variabili CSS `--color-*`).
+ *
+ * Manteniamo invariata la struttura del componente (tabelle, griglia) e
+ * sostituiamo solo le variabili di colore così il day-picker eredita
+ * automaticamente lo schema chiaro/scuro insieme al resto dell'interfaccia.
+ */
+
+.rdp-themed {
+  --rdp-accent-color: var(--color-accent);
+  --rdp-background-color: var(--color-surface-muted);
+  --rdp-accent-background-color: color-mix(
+    in srgb,
+    var(--color-accent) 14%,
+    transparent
+  );
+
+  /* Tipografia e spaziatura */
+  --rdp-day-width: 36px;
+  --rdp-day-height: 36px;
+  --rdp-day_button-width: 36px;
+  --rdp-day_button-height: 36px;
+  --rdp-day_button-border-radius: 10px;
+  --rdp-selected-border: 0;
+  --rdp-outside-opacity: 0.4;
+
+  font-size: 13px;
+}
+
+.rdp-themed .rdp-caption_label {
+  font-weight: 600;
+  color: var(--color-foreground);
+}
+
+.rdp-themed .rdp-weekday {
+  color: var(--color-muted-foreground);
+  font-weight: 500;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.rdp-themed .rdp-day_button {
+  border: 0;
+  transition: background-color 0.15s ease, color 0.15s ease;
+  color: var(--color-foreground);
+}
+
+.rdp-themed .rdp-day_button:hover:not([disabled]) {
+  background-color: var(--color-surface-muted);
+}
+
+.rdp-themed .rdp-today:not(.rdp-selected) .rdp-day_button {
+  font-weight: 700;
+  color: var(--color-accent);
+}
+
+/* Stati di selezione: inizio, intervallo intermedio, fine */
+.rdp-themed .rdp-range_start .rdp-day_button,
+.rdp-themed .rdp-range_end .rdp-day_button,
+.rdp-themed .rdp-selected:not(.rdp-range_middle) .rdp-day_button {
+  background-color: var(--color-accent);
+  color: #fff;
+  font-weight: 600;
+}
+
+.rdp-themed .rdp-range_middle .rdp-day_button {
+  background-color: color-mix(
+    in srgb,
+    var(--color-accent) 14%,
+    transparent
+  );
+  color: var(--color-foreground);
+  border-radius: 0;
+}
+
+.rdp-themed .rdp-range_start .rdp-day_button {
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+}
+
+.rdp-themed .rdp-range_end .rdp-day_button {
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+}
+
+.rdp-themed .rdp-outside .rdp-day_button {
+  color: var(--color-muted-foreground);
+  opacity: var(--rdp-outside-opacity);
+}
+
+.rdp-themed .rdp-chevron {
+  fill: var(--color-muted-foreground);
+}
+
+.rdp-themed .rdp-button_previous:hover .rdp-chevron,
+.rdp-themed .rdp-button_next:hover .rdp-chevron {
+  fill: var(--color-foreground);
+}

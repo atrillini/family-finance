@@ -1,36 +1,106 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# FamilyFinance AI
+
+Web app di gestione finanziaria familiare, costruita con **Next.js 16**, **Tailwind CSS v4**, **Lucide React**, **Supabase** e **Google Gemini**. Il design è ispirato ad Apple Card: superfici chiare, tipografia SF, carte con gradienti profondi e micro‑interazioni discrete.
+
+## Funzionalità
+
+- **Dashboard** con saldo totale, entrate e uscite del mese.
+- **Tabella transazioni** con icone per categoria, alimentata in tempo reale da Supabase.
+- **AddTransaction**: form che interroga Gemini per la categoria suggerita e scrive su Supabase.
+- **Budget** per categoria con barre di avanzamento.
+- **Impostazioni** con il pannello di integrazione Gemini.
+- **Sidebar** di navigazione: _Dashboard_, _Transazioni_, _Budget_, _Impostazioni_.
+- **Fallback** automatico a dati di esempio quando Supabase non è configurato.
 
 ## Getting Started
 
-First, run the development server:
-
 ```bash
+npm install
+cp .env.example .env.local   # compila le variabili d'ambiente
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Apri [http://localhost:3000](http://localhost:3000).
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Variabili d'ambiente
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+| Variabile                        | Dove vive      | A cosa serve                                               |
+| -------------------------------- | -------------- | ---------------------------------------------------------- |
+| `GEMINI_API_KEY`                 | Solo server    | Chiamate a Gemini dall'endpoint `/api/categorize`.         |
+| `NEXT_PUBLIC_SUPABASE_URL`       | Browser/server | URL del progetto Supabase.                                 |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY`  | Browser/server | Chiave `anon` per leggere/scrivere dal client con RLS.     |
 
-## Learn More
+La chiave di Gemini **non** viene mai esposta al browser: il componente `AddTransaction` chiama la route `/api/categorize`, che a sua volta usa `lib/gemini.ts`.
 
-To learn more about Next.js, take a look at the following resources:
+## Schema Supabase
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+Esegui questo SQL nell'editor SQL di Supabase:
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+```sql
+create table public.transactions (
+  id uuid primary key default gen_random_uuid(),
+  date timestamptz not null default now(),
+  description text not null,
+  merchant text,
+  category text not null default 'Altro',
+  amount numeric not null,
+  tags text[] not null default '{}',
+  is_subscription boolean not null default false,
+  created_at timestamptz not null default now()
+);
 
-## Deploy on Vercel
+-- Abilita il realtime sulla tabella
+alter publication supabase_realtime add table public.transactions;
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+-- (Demo) Row Level Security con accesso libero – in produzione limita per utente
+alter table public.transactions enable row level security;
+create policy "read all" on public.transactions for select using (true);
+create policy "insert all" on public.transactions for insert with check (true);
+```
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Se hai già la tabella creata dalla versione precedente, aggiungi solo le colonne nuove:
+
+```sql
+alter table public.transactions
+  add column if not exists tags text[] not null default '{}',
+  add column if not exists is_subscription boolean not null default false;
+```
+
+## Flusso di inserimento transazione
+
+```
+ AddTransaction (client)
+   │
+   │ 1. POST /api/categorize { description }
+   ▼
+ app/api/categorize/route.ts ── usa GEMINI_API_KEY
+   │
+   │ 2. category suggerita
+   ▼
+ AddTransaction → supabase.from("transactions").insert(...)
+   │
+   ▼
+ Supabase Realtime → DashboardClient aggiorna la lista in tempo reale
+```
+
+## Struttura del progetto
+
+```
+app/
+  api/categorize/route.ts   # proxy server-side per Gemini
+  components/
+    Sidebar.tsx
+    PageHeader.tsx
+    SummaryCards.tsx
+    TransactionsTable.tsx
+    AddTransaction.tsx      # form con suggerimento AI + insert Supabase
+    DashboardClient.tsx     # fetch iniziale + subscription realtime
+  page.tsx                  # Dashboard
+  transazioni/              # Pagina Transazioni
+  budget/                   # Pagina Budget
+  impostazioni/             # Pagina Impostazioni
+lib/
+  gemini.ts                 # integrazione Google Generative AI
+  supabase.ts               # client Supabase tipizzato + TransactionRow
+  mock-data.ts              # dati fittizi + helper €/date
+```
