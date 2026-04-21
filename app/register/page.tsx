@@ -5,6 +5,37 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Sparkles, Loader2 } from "lucide-react";
 import { getSupabaseClient } from "@/lib/supabase";
+import { isPublicRegistrationOpen } from "@/lib/registration-policy";
+
+function RegistrationClosed() {
+  return (
+    <div className="min-h-[100dvh] flex flex-col items-center justify-center px-6 py-12 bg-[color:var(--color-background)]">
+      <div className="w-full max-w-[400px] card-surface p-8 md:p-10 space-y-6">
+        <div className="text-center space-y-3">
+          <h1 className="text-xl font-semibold tracking-tight">
+            Registrazione non disponibile
+          </h1>
+          <p className="text-[13px] text-[color:var(--color-muted-foreground)] leading-snug">
+            Questa app è privata: i nuovi account vengono creati solo
+            dall&apos;amministratore (es. da Supabase Dashboard → Authentication,
+            oppure &quot;Invite user&quot;).
+          </p>
+          <p className="text-[13px] text-[color:var(--color-muted-foreground)] leading-snug">
+            Per bloccare del tutto le iscrizioni via API, nel progetto Supabase
+            disabilita le nuove registrazioni nelle impostazioni Auth (oltre a
+            questa pagina).
+          </p>
+        </div>
+        <Link
+          href="/login"
+          className="flex h-11 w-full items-center justify-center rounded-xl bg-[color:var(--color-accent)] text-[15px] font-semibold text-white"
+        >
+          Vai al login
+        </Link>
+      </div>
+    </div>
+  );
+}
 
 function RegisterForm() {
   const router = useRouter();
@@ -17,8 +48,13 @@ function RegisterForm() {
   const [loading, setLoading] = useState(false);
   const [info, setInfo] = useState<string | null>(null);
 
+  if (!isPublicRegistrationOpen()) {
+    return <RegistrationClosed />;
+  }
+
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
+    if (!isPublicRegistrationOpen()) return;
     setError(null);
     setInfo(null);
     setLoading(true);

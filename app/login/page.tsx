@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Sparkles, Loader2 } from "lucide-react";
 import { getSupabaseClient } from "@/lib/supabase";
+import { isPublicRegistrationOpen } from "@/lib/registration-policy";
 
 function LoginForm() {
   const router = useRouter();
@@ -125,15 +126,22 @@ function LoginForm() {
           </button>
         </form>
 
-        <p className="text-center text-[13px] text-[color:var(--color-muted-foreground)]">
-          Non hai un account?{" "}
-          <Link
-            href="/register"
-            className="font-semibold text-[color:var(--color-accent)] hover:underline"
-          >
-            Registrati
-          </Link>
-        </p>
+        {isPublicRegistrationOpen() ? (
+          <p className="text-center text-[13px] text-[color:var(--color-muted-foreground)]">
+            Non hai un account?{" "}
+            <Link
+              href="/register"
+              className="font-semibold text-[color:var(--color-accent)] hover:underline"
+            >
+              Registrati
+            </Link>
+          </p>
+        ) : (
+          <p className="text-center text-[13px] text-[color:var(--color-muted-foreground)] leading-snug">
+            Gli account sono creati dall&apos;amministratore. Se ti è stato
+            assegnato un accesso, usa Accedi qui sopra.
+          </p>
+        )}
       </div>
     </div>
   );
