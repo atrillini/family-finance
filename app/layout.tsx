@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { Toaster } from "sonner";
-import Sidebar from "./components/Sidebar";
+import AppShell from "./components/AppShell";
 import { SearchProvider } from "@/lib/search-context";
 
 const geistSans = Geist({
@@ -33,10 +33,7 @@ export default function RootLayout({
     >
       <body className="min-h-full bg-[color:var(--color-background)] text-[color:var(--color-foreground)]">
         <SearchProvider>
-          <div className="flex min-h-screen">
-            <Sidebar />
-            <main className="flex-1 min-w-0">{children}</main>
-          </div>
+          <AppShell>{children}</AppShell>
           <Toaster
             position="bottom-right"
             theme="system"

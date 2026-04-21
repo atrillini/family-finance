@@ -1,7 +1,15 @@
 import PageHeader from "../components/PageHeader";
-import { Sparkles, KeyRound, User, Bell } from "lucide-react";
+import { Sparkles, KeyRound, Bell } from "lucide-react";
+import ProfileNameSettings from "../components/ProfileNameSettings";
+import ProjectUsersList from "../components/ProjectUsersList";
+import { getSessionUser } from "@/lib/supabase/server-session";
 
-export default function ImpostazioniPage() {
+export default async function ImpostazioniPage() {
+  const user = await getSessionUser();
+  const meta = user?.user_metadata as Record<string, unknown> | undefined;
+  const initialFullName =
+    typeof meta?.full_name === "string" ? meta.full_name : "";
+
   return (
     <div className="px-6 md:px-10 py-8 md:py-10 space-y-8 max-w-[900px]">
       <PageHeader
@@ -9,12 +17,12 @@ export default function ImpostazioniPage() {
         subtitle="Gestisci il tuo profilo e le integrazioni di FamilyFinance AI."
       />
 
-      <SettingsRow
-        icon={<User className="h-[18px] w-[18px]" />}
-        title="Profilo famiglia"
-        description="Nome della famiglia, membri e preferenze di visualizzazione."
-        actionLabel="Modifica"
+      <ProfileNameSettings
+        initialFullName={initialFullName}
+        email={user?.email ?? ""}
       />
+
+      <ProjectUsersList />
 
       <SettingsRow
         icon={<Bell className="h-[18px] w-[18px]" />}
@@ -65,7 +73,7 @@ function SettingsRow({
 }) {
   return (
     <div className="card-surface flex items-center gap-4 p-5">
-      <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[color:var(--color-surface-muted)] text-[color:var(--color-foreground)]">
+      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[color:var(--color-surface-muted)] text-[color:var(--color-foreground)]">
         {icon}
       </div>
       <div className="flex-1 min-w-0">
@@ -74,7 +82,10 @@ function SettingsRow({
           {description}
         </p>
       </div>
-      <button className="rounded-full border border-[color:var(--color-border)] bg-[color:var(--color-surface)] px-4 py-2 text-[13px] font-medium transition-colors hover:bg-[color:var(--color-surface-muted)]">
+      <button
+        type="button"
+        className="rounded-full border border-[color:var(--color-border)] bg-[color:var(--color-surface)] px-4 py-2 text-[13px] font-medium transition-colors hover:bg-[color:var(--color-surface-muted)]"
+      >
         {actionLabel}
       </button>
     </div>

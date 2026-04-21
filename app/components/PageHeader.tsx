@@ -8,9 +8,15 @@ import { TRANSACTION_CATEGORIES } from "@/lib/gemini";
 type PageHeaderProps = {
   title: string;
   subtitle?: string;
+  /** Iniziali avatar (da sessione utente). */
+  avatarInitials?: string;
 };
 
-export default function PageHeader({ title, subtitle }: PageHeaderProps) {
+export default function PageHeader({
+  title,
+  subtitle,
+  avatarInitials = "??",
+}: PageHeaderProps) {
   const { query, setQuery } = useHeaderSearch();
   const [focused, setFocused] = useState(false);
   const wrapperRef = useRef<HTMLDivElement | null>(null);
@@ -124,8 +130,11 @@ export default function PageHeader({ title, subtitle }: PageHeaderProps) {
         >
           <Bell className="h-4 w-4" />
         </button>
-        <div className="flex h-9 w-9 items-center justify-center rounded-full bg-gradient-to-br from-[#5e5ce6] to-[#0a84ff] text-[12px] font-semibold text-white">
-          MR
+        <div
+          className="flex h-9 w-9 items-center justify-center rounded-full bg-gradient-to-br from-[#5e5ce6] to-[#0a84ff] text-[12px] font-semibold text-white"
+          aria-hidden
+        >
+          {avatarInitials.slice(0, 3)}
         </div>
       </div>
     </header>

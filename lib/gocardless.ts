@@ -11,10 +11,9 @@ import { daysSinceFloor, getSyncFloorDate } from "./sync-floor";
  *   GOCARDLESS_SECRET_KEY="..."       # Secret Key dal portale GoCardless
  *   NEXT_PUBLIC_APP_URL="https://tuo-dominio.com"
  *                                     # Origine pubblica dell'app (senza slash finale).
- *                                     # Il redirect GoCardless sarà `{NEXT_PUBLIC_APP_URL}/api/callback`.
- *                                     # Se omessa → fallback http://localhost:3000 (solo sviluppo).
- *   GOCARDLESS_REDIRECT_URL="https://..." # (Opzionale) Override dell'intero URL di
- *                                     # callback se serve un path diverso da `/api/callback`.
+ *                                     # Callback di default: `{NEXT_PUBLIC_APP_URL}/api/callback`.
+ *                                     # Se assente si usa NEXT_PUBLIC_BASE_URL (legacy), poi localhost.
+ *   GOCARDLESS_REDIRECT_URL="https://..." # Override dell'intero URL di callback (priorità massima).
  *
  * Opzionali:
  *   GOCARDLESS_BASE_URL               # Override dell'endpoint API (default
@@ -44,33 +43,33 @@ export function isGoCardlessConfigured(): boolean {
 }
 
 /**
- * Origine pubblica dell'app per costruire URL assoluti (callback GoCardless).
- * Usa `NEXT_PUBLIC_APP_URL`; se assente → `http://localhost:3000`.
+ * Base pubblica dell'app (senza slash finale). Usata per costruire il callback GoCardless.
+ * Ordine: NEXT_PUBLIC_APP_URL → NEXT_PUBLIC_BASE_URL → http://localhost:3000
  */
-export function getAppOrigin(): string {
-  const raw = process.env.NEXT_PUBLIC_APP_URL?.trim();
-  const base = raw?.replace(/\/+$/, "") || "http://localhost:3000";
-  return base;
+export function getPublicAppBaseUrl(): string {
+  const raw =
+    process.env.NEXT_PUBLIC_APP_URL?.trim() ||
+    process.env.NEXT_PUBLIC_BASE_URL?.trim() ||
+    "";
+  if (!raw) return "http://localhost:3000";
+  return raw.replace(/\/+$/, "");
 }
 
 /**
  * URL di default verso cui GoCardless redirige l'utente dopo il consenso.
- * Ordine:
- *   1. `GOCARDLESS_REDIRECT_URL` — URL completo di callback (override totale).
- *   2. `{NEXT_PUBLIC_APP_URL}/api/callback` — oppure localhost se la variabile manca.
- *
- * Si può comunque passare `redirectUrl` esplicito a `createConsentSession`.
+ * Ordine: `GOCARDLESS_REDIRECT_URL` (override totale), poi `{getPublicAppBaseUrl()}/api/callback`.
  */
 export function getDefaultRedirectUrl(): string {
   const explicit = process.env.GOCARDLESS_REDIRECT_URL?.trim();
   if (explicit) return explicit;
-  return `${getAppOrigin()}/api/callback`;
+  return `${getPublicAppBaseUrl()}/api/callback`;
 }
 
-/**
- * Restituisce un client GoCardless già autenticato. Il token di accesso viene
- * cachato in memoria finché non scade (con 60s di margine).
- */
+/** @deprecated Usa `getPublicAppBaseUrl()` */
+export function getAppOrigin(): string {
+  return getPublicAppBaseUrl();
+}
+
 export async function getGoCardlessClient(): Promise<NordigenClientInstance> {
   if (!isGoCardlessConfigured()) {
     throw new Error(
