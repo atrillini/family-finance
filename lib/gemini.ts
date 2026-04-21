@@ -376,14 +376,41 @@ export async function parseNaturalLanguageQuery(
 
 /**
  * Forma minima delle transazioni attesa da `analyzeFinance`.
- * Passare troppi campi/token inutili allunga la latenza e aumenta il costo.
+ * `tags` e `merchant` sono necessari per domande tipo "uscite con tag X".
  */
 export type FinanceTx = {
   description: string;
   amount: number;
   category: string;
   date: string;
+  tags: string[];
+  merchant: string | null;
 };
+
+function parseTagsField(v: unknown): string[] {
+  if (!Array.isArray(v)) return [];
+  return v
+    .filter((x): x is string => typeof x === "string")
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0);
+}
+
+/**
+ * Normalizza una riga JSON arbitraria (body API o client) in `FinanceTx`.
+ */
+export function coerceFinanceTxFromJson(t: Record<string, unknown>): FinanceTx {
+  return {
+    description: String(t.description ?? ""),
+    amount: Number(t.amount ?? 0),
+    category: String(t.category ?? ""),
+    date: String(t.date ?? ""),
+    tags: parseTagsField(t.tags),
+    merchant:
+      typeof t.merchant === "string" && t.merchant.trim()
+        ? t.merchant.trim()
+        : null,
+  };
+}
 
 /**
  * Contesto opzionale passato al modello insieme alla domanda.
@@ -422,12 +449,14 @@ export async function analyzeFinance(
     year: "numeric",
   }).format(new Date());
 
-  // Manteniamo SOLO i campi richiesti per ridurre i token e focalizzare il modello.
+  // Massimo 200 righe; includiamo tags e merchant per query su etichette ed esercenti.
   const summary = transactions.slice(0, 200).map((t) => ({
     description: t.description,
     amount: Number(t.amount),
     category: t.category,
     date: t.date,
+    tags: Array.isArray(t.tags) ? t.tags : [],
+    merchant: t.merchant ?? null,
   }));
 
   // Sezione "periodo selezionato": formattiamo in italiano il range così
@@ -464,8 +493,17 @@ export async function analyzeFinance(
     "Sei un esperto analista finanziario. Hai accesso ai dati delle transazioni dell'utente (che ti vengono forniti in formato JSON).",
     "Il tuo compito è rispondere in modo preciso, conciso e cordiale alle domande dell'utente.",
     "",
+    "Struttura dei dati:",
+    "- Ogni transazione ha: description, amount, category, date, tags (array di stringhe), merchant (testo o null).",
+    "- Convenzione importi: amount **negativo** = uscita/spesa; amount **positivo** = entrata.",
+    "- Per filtrare per tag: considera solo le righe il cui array `tags` contiene il tag richiesto, **confronto senza distinguere maiuscole/minuscole** (es. 'Giulyt' coincide con 'giulyt').",
+    "- Per 'entrate con tag T' applica prima il filtro sul tag poi tieni solo amount > 0; per 'uscite/spese con tag T' tieni solo amount < 0.",
+    "- Il campo `merchant` è il nome normalizzato dell'esercente; usalo per domande sull'esercente oltre a `description`.",
+    "",
     "Regole:",
-    "- Se l'utente chiede un totale (es. 'totale Netflix'), somma gli importi negativi e rispondi con la cifra esatta.",
+    "- Se l'utente chiede un totale su un tag, un merchant o una categoria, usa **solo** le transazioni nel JSON che soddisfano il criterio; non inventare dati.",
+    "- Se dopo aver filtrato non c'è nessuna riga, dillo chiaramente. Non offrire un elenco di sole categorie come sostituto quando la domanda riguarda i **tag**, a meno che non serva davvero.",
+    "- Se l'utente chiede un totale (es. 'totale Netflix'), somma gli importi pertinenti (di solito uscite = negativi) e rispondi con la cifra esatta.",
     "- Se l'utente chiede un consiglio, analizza le tendenze (es. 'stai spendendo molto in svago questo mese').",
     "- Rispondi sempre in Markdown per rendere i numeri in grassetto e le liste leggibili.",
     "- Usa il formato € (Euro) per gli importi, es. **€ 42,50**.",

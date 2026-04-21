@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import {
   analyzeFinance,
+  coerceFinanceTxFromJson,
   type AnalyzeContext,
   type FinanceTx,
 } from "@/lib/gemini";
@@ -21,8 +22,9 @@ export const runtime = "nodejs";
  * }
  * Risposta: { answer: string } (Markdown)
  *
- * Il client invia la sintesi delle transazioni insieme alla domanda; la
- * GEMINI_API_KEY resta solo sul server. Se presente, `dateRange` viene
+ * Il client invia la sintesi delle transazioni (inclusi `tags` e `merchant`)
+ * insieme alla domanda; la GEMINI_API_KEY resta solo sul server.
+ * Se presente, `dateRange` viene
  * iniettato nel system prompt in modo che domande senza riferimenti
  * temporali espliciti ("quanto ho speso?") vengano interpretate rispetto
  * al periodo attualmente selezionato nella dashboard.
@@ -62,12 +64,7 @@ export async function POST(request: Request) {
   const rawTxs = Array.isArray(body.transactions) ? body.transactions : [];
   const transactions: FinanceTx[] = rawTxs
     .filter((t): t is Record<string, unknown> => !!t && typeof t === "object")
-    .map((t) => ({
-      description: String(t.description ?? ""),
-      amount: Number(t.amount ?? 0),
-      category: String(t.category ?? ""),
-      date: String(t.date ?? ""),
-    }));
+    .map((t) => coerceFinanceTxFromJson(t));
 
   let context: AnalyzeContext | undefined;
   if (body.dateRange && typeof body.dateRange === "object") {
