@@ -14,7 +14,7 @@ export const dynamic = "force-dynamic";
  * Body JSON:
  *   {
  *     institutionId: string,        // es. "INTESA_SANPAOLO_BCITITMM"
- *     redirectUrl?: string,         // default: GOCARDLESS_REDIRECT_URL
+ *     redirectUrl?: string,         // default: getDefaultRedirectUrl() → NEXT_PUBLIC_APP_URL/api/callback
  *     userLanguage?: string,        // default: "IT"
  *     referenceId?: string          // UUID personale (rate limit / tracking)
  *   }

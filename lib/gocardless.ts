@@ -9,10 +9,12 @@ import { daysSinceFloor, getSyncFloorDate } from "./sync-floor";
  *
  *   GOCARDLESS_SECRET_ID="..."        # Secret ID dal portale GoCardless
  *   GOCARDLESS_SECRET_KEY="..."       # Secret Key dal portale GoCardless
- *   GOCARDLESS_REDIRECT_URL="http://localhost:3000/api/callback"
- *                                     # URL dove redirigere l'utente dopo il
- *                                     # consenso bancario. In produzione, ad
- *                                     # esempio "https://tuo-dominio.com/api/callback".
+ *   NEXT_PUBLIC_APP_URL="https://tuo-dominio.com"
+ *                                     # Origine pubblica dell'app (senza slash finale).
+ *                                     # Il redirect GoCardless sarà `{NEXT_PUBLIC_APP_URL}/api/callback`.
+ *                                     # Se omessa → fallback http://localhost:3000 (solo sviluppo).
+ *   GOCARDLESS_REDIRECT_URL="https://..." # (Opzionale) Override dell'intero URL di
+ *                                     # callback se serve un path diverso da `/api/callback`.
  *
  * Opzionali:
  *   GOCARDLESS_BASE_URL               # Override dell'endpoint API (default
@@ -42,14 +44,27 @@ export function isGoCardlessConfigured(): boolean {
 }
 
 /**
+ * Origine pubblica dell'app per costruire URL assoluti (callback GoCardless).
+ * Usa `NEXT_PUBLIC_APP_URL`; se assente → `http://localhost:3000`.
+ */
+export function getAppOrigin(): string {
+  const raw = process.env.NEXT_PUBLIC_APP_URL?.trim();
+  const base = raw?.replace(/\/+$/, "") || "http://localhost:3000";
+  return base;
+}
+
+/**
  * URL di default verso cui GoCardless redirige l'utente dopo il consenso.
- * Se non è impostata la variabile si può passare l'URL esplicito a `createConsentSession`.
+ * Ordine:
+ *   1. `GOCARDLESS_REDIRECT_URL` — URL completo di callback (override totale).
+ *   2. `{NEXT_PUBLIC_APP_URL}/api/callback` — oppure localhost se la variabile manca.
+ *
+ * Si può comunque passare `redirectUrl` esplicito a `createConsentSession`.
  */
 export function getDefaultRedirectUrl(): string {
-  return (
-    process.env.GOCARDLESS_REDIRECT_URL ||
-    `${process.env.NEXT_PUBLIC_BASE_URL || "http://localhost:3000"}/api/callback`
-  );
+  const explicit = process.env.GOCARDLESS_REDIRECT_URL?.trim();
+  if (explicit) return explicit;
+  return `${getAppOrigin()}/api/callback`;
 }
 
 /**
