@@ -31,6 +31,7 @@ import {
   type Transaction,
 } from "@/lib/mock-data";
 import type { TransactionCategory } from "@/lib/gemini";
+import TransactionSearchBar from "./TransactionSearchBar";
 
 const CATEGORY_ICONS: Record<TransactionCategory, LucideIcon> = {
   Alimentari: ShoppingBag,
@@ -90,6 +91,8 @@ type TransactionsTableProps = {
   selectedIds?: Set<string>;
   /** Callback per aggiornare la selezione. */
   onSelectionChange?: (next: Set<string>) => void;
+  /** Campo ricerca transazioni (contesto globale) nell’header della card. */
+  showTransactionSearch?: boolean;
 };
 
 export default function TransactionsTable({
@@ -104,6 +107,7 @@ export default function TransactionsTable({
   selectable = false,
   selectedIds,
   onSelectionChange,
+  showTransactionSearch = true,
 }: TransactionsTableProps) {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState<number>(defaultPageSize);
@@ -164,8 +168,8 @@ export default function TransactionsTable({
 
   return (
     <section className="card-surface overflow-hidden">
-      <div className="flex items-center justify-between px-4 sm:px-5 md:px-6 py-4 border-b border-[color:var(--color-border)]">
-        <div>
+      <div className="flex flex-col gap-4 border-b border-[color:var(--color-border)] px-4 py-4 sm:px-5 md:px-6 sm:flex-row sm:items-start sm:justify-between">
+        <div className="min-w-0 flex-1">
           <h2 className="text-[16px] font-semibold tracking-tight">{title}</h2>
           <p className="text-[12px] text-[color:var(--color-muted-foreground)]">
             Aggiornate in tempo reale · {total}{" "}
@@ -175,6 +179,9 @@ export default function TransactionsTable({
               : ""}
           </p>
         </div>
+        {showTransactionSearch ? (
+          <TransactionSearchBar className="w-full shrink-0 sm:w-auto sm:max-w-sm sm:pt-0.5" />
+        ) : null}
       </div>
 
       {/*
