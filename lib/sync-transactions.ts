@@ -198,6 +198,7 @@ export async function syncTransactions(
         amount: t.amount,
         tags: analysis.tags,
         is_subscription: analysis.is_subscription,
+        is_transfer: analysis.is_transfer,
         account_id: account.id,
         external_id: t.external_id,
         date: t.date,
@@ -505,6 +506,7 @@ export async function refreshDescriptions(
           category: analysis.category,
           tags: analysis.tags,
           is_subscription: analysis.is_subscription,
+          is_transfer: analysis.is_transfer,
           merchant: analysis.merchant || row.merchant || null,
         };
         const { error: uErr, count } = await supabase
@@ -608,6 +610,7 @@ export async function recategorizeTransaction(
     update.category = analysis.category;
     update.tags = analysis.tags;
     update.is_subscription = analysis.is_subscription;
+    update.is_transfer = analysis.is_transfer;
     // Preserviamo il merchant precedente se l'IA non ha trovato nulla di
     // meglio — importante soprattutto quando la transazione era stata creata
     // a mano con un merchant già "pulito" dall'utente.
@@ -1109,6 +1112,7 @@ async function safeAnalyze(
     merchant: "",
     tags: [],
     is_subscription: false,
+    is_transfer: false,
   };
 
   if (!description?.trim()) {

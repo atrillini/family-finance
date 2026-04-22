@@ -78,6 +78,7 @@ export default function AddTransaction({
         merchant: data.merchant ?? "",
         tags: data.tags ?? [],
         is_subscription: Boolean(data.is_subscription),
+        is_transfer: Boolean(data.is_transfer),
       };
 
       setAnalysis(full);
@@ -141,6 +142,7 @@ export default function AddTransaction({
           amount: signedAmount,
           tags: finalAnalysis?.tags ?? [],
           is_subscription: finalAnalysis?.is_subscription ?? false,
+          is_transfer: finalAnalysis?.is_transfer ?? false,
           account_id: accountId || null,
           user_id: user.id,
         });

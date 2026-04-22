@@ -42,7 +42,7 @@ export function applyRules(
   rules: CategorizationRuleRow[],
   description: string,
   merchant: string | null
-): (TransactionAnalysis & { is_transfer: boolean; matchedRuleId: string }) | null {
+): (TransactionAnalysis & { matchedRuleId: string }) | null {
   const desc = (description ?? "").toLowerCase();
   const merch = (merchant ?? "").toLowerCase();
   for (const rule of rules) {

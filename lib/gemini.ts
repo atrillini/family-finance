@@ -34,6 +34,8 @@ export type TransactionAnalysis = {
   tags: string[];
   /** `true` se Gemini riconosce un abbonamento ricorrente. */
   is_subscription: boolean;
+  /** `true` se è un giroconto / trasferimento fra propri conti (esclude statistiche entrate/uscite). */
+  is_transfer: boolean;
 };
 
 let cachedClient: GoogleGenerativeAI | null = null;
@@ -104,8 +106,19 @@ function getAnalysisModel() {
             description:
               "true se la transazione sembra un abbonamento ricorrente (Netflix, Spotify, gym, SaaS...).",
           },
+          is_transfer: {
+            type: SchemaType.BOOLEAN,
+            description:
+              "true solo per bonifici/giroconti tra propri conti o carte dello stesso intestatario; altrimenti false.",
+          },
         },
-        required: ["category", "merchant", "tags", "is_subscription"],
+        required: [
+          "category",
+          "merchant",
+          "tags",
+          "is_subscription",
+          "is_transfer",
+        ],
       },
     },
   });
@@ -116,6 +129,7 @@ const EMPTY_ANALYSIS: TransactionAnalysis = {
   merchant: "",
   tags: [],
   is_subscription: false,
+  is_transfer: false,
 };
 
 /**
@@ -162,6 +176,7 @@ export async function analyzeTransaction(
     "- 'merchant' è il nome pulito del negozio/servizio (es. 'Netflix', 'Esselunga'). Usa stringa vuota se non identificabile.",
     "- 'tags' sono 1-4 etichette descrittive in minuscolo. Esempi: 'tempo libero', 'sociale', 'e-commerce', 'fisso', 'digitale', 'famiglia', 'salute', 'casa'.",
     "- 'is_subscription' è true se è un abbonamento ricorrente (streaming, SaaS, palestra, telefono, luce/gas, ecc.), altrimenti false.",
+    "- 'is_transfer' è true solo per trasferimenti fra propri conti/carte (giroconti); per pagamenti verso terzi o acquisti è false.",
     "- Per i ristoranti aggiungi tag come 'tempo libero' e 'sociale'.",
     "- Per gli acquisti online aggiungi il tag 'e-commerce'.",
     rulesSection
@@ -213,12 +228,14 @@ function parseAnalysis(raw: string): TransactionAnalysis {
     : [];
 
   const is_subscription = Boolean(obj.is_subscription);
+  const is_transfer = Boolean(obj.is_transfer);
 
   return {
     category: category ?? "Altro",
     merchant,
     tags,
     is_subscription,
+    is_transfer,
   };
 }
 
@@ -375,8 +392,7 @@ export async function parseNaturalLanguageQuery(
 // ---------------------------------------------------------------------------
 
 /**
- * Forma minima delle transazioni attesa da `analyzeFinance`.
- * Campi essenziali; `tags` e `merchant` servono per domande tipo "uscite con tag X".
+ * Dati per `analyzeFinance`: campi essenziali + tag/merchant per filtri in linguaggio naturale.
  */
 export type FinanceTx = {
   description: string;
@@ -397,9 +413,7 @@ function parseTagsField(v: unknown): string[] {
     .filter((s) => s.length > 0);
 }
 
-/**
- * Normalizza una riga JSON arbitraria (body API o client) in `FinanceTx`.
- */
+/** Normalizza un oggetto JSON arbitrario in `FinanceTx` (es. body API `/api/analyze`). */
 export function coerceFinanceTxFromJson(t: Record<string, unknown>): FinanceTx {
   return {
     description: String(t.description ?? ""),
@@ -451,7 +465,6 @@ export async function analyzeFinance(
     year: "numeric",
   }).format(new Date());
 
-  // Massimo 200 righe; includiamo tags e merchant per query su etichette ed esercenti.
   const summary = transactions.slice(0, 200).map((t) => ({
     description: t.description,
     amount: Number(t.amount),
@@ -498,17 +511,12 @@ export async function analyzeFinance(
     "Sei un esperto analista finanziario. Hai accesso ai dati delle transazioni dell'utente (che ti vengono forniti in formato JSON).",
     "Il tuo compito è rispondere in modo preciso, conciso e cordiale alle domande dell'utente.",
     "",
-    "Struttura dei dati:",
-    "- Ogni transazione ha: description, amount, category, date, tags (array di stringhe), merchant (testo o null).",
-    "- Convenzione importi: amount **negativo** = uscita/spesa; amount **positivo** = entrata.",
-    "- Per filtrare per tag: considera solo le righe il cui array `tags` contiene il tag richiesto, **confronto senza distinguere maiuscole/minuscole** (es. 'Giulyt' coincide con 'giulyt').",
-    "- Per 'entrate con tag T' applica prima il filtro sul tag poi tieni solo amount > 0; per 'uscite/spese con tag T' tieni solo amount < 0.",
-    "- Il campo `merchant` è il nome normalizzato dell'esercente; usalo per domande sull'esercente oltre a `description`.",
-    "",
     "Regole:",
-    "- Se l'utente chiede un totale su un tag, un merchant o una categoria, usa **solo** le transazioni nel JSON che soddisfano il criterio; non inventare dati.",
-    "- Se dopo aver filtrato non c'è nessuna riga, dillo chiaramente. Non offrire un elenco di sole categorie come sostituto quando la domanda riguarda i **tag**, a meno che non serva davvero.",
-    "- Per totali ed entrate/uscite rispetta la convenzione importi del JSON (negativo = spesa, positivo = entrata).",
+    "- Importi: **negativo** = uscita/spesa, **positivo** = entrata. Per 'quanto ho guadagnato / entrate' somma solo importi > 0 (nel periodo se applicabile); per spese somma importi < 0.",
+    "- Ogni transazione ha `tags` (array di stringhe). Se l'utente chiede filtri per un tag (es. 'movimenti con tag lavoro'), considera solo le righe dove `tags` contiene quel termine, **confronto case-insensitive** (es. 'Lavoro' matcha tag 'lavoro'). Se nessuna riga ha quel tag, dillo chiaramente.",
+    "- Per 'entrate con tag T' / 'uscite con tag T': dopo il filtro tag, tieni solo importi rispettivamente **> 0** o **< 0**.",
+    "- Il campo `merchant` è l'esercente quando presente; puoi usarlo insieme a description per ricerche.",
+    "- Se l'utente chiede un totale per categoria o merchant, filtra prima poi somma gli importi coerenti con la domanda (uscite vs entrate).",
     "- Se l'utente chiede un totale (es. 'totale Netflix'), identifica le righe pertinenti e somma con la convenzione segno sopra.",
     "- Se l'utente chiede un consiglio, analizza le tendenze (es. 'stai spendendo molto in svago questo mese').",
     "- Rispondi sempre in Markdown per rendere i numeri in grassetto e le liste leggibili.",
