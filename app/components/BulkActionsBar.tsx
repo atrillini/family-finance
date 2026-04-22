@@ -143,7 +143,20 @@ export default function BulkActionsBar({
             {tagsPanelOpen ? (
               <div
                 className="absolute left-0 top-[calc(100%+8px)] z-50 w-[min(340px,calc(100vw-48px))] rounded-2xl border border-[color:var(--color-border)] bg-[color:var(--color-surface)] p-3 shadow-2xl"
-                onMouseDown={(e) => e.preventDefault()}
+                onMouseDown={(e) => {
+                  const el = e.target as HTMLElement | null;
+                  if (!el) return;
+                  // Non bloccare il focus su input/pulsanti: preventDefault sul contenitore
+                  // impediva di digitare nel TagsInput (mousedown in bubble).
+                  if (
+                    el.closest(
+                      "input, textarea, select, button, [role='option'], [contenteditable='true']"
+                    )
+                  ) {
+                    return;
+                  }
+                  e.preventDefault();
+                }}
               >
                 <p className="mb-2 text-[11.5px] text-[color:var(--color-muted-foreground)]">
                   I tag vengono aggiunti a tutte le righe selezionate (unione con
