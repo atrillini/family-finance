@@ -43,8 +43,8 @@ type Props = {
 };
 
 /**
- * Barra sticky che compare in fondo alla pagina quando ci sono transazioni
- * selezionate. Le azioni sono quelle massive. Il parent gestisce la logica
+ * Barra fissa in alto quando ci sono transazioni selezionate, così non copre
+ * le righe vicino al bordo inferiore del viewport. Il parent gestisce la logica
  * di business: qui si limita a mostrare la UI e notificare i click.
  */
 export default function BulkActionsBar({
@@ -66,7 +66,7 @@ export default function BulkActionsBar({
   if (count === 0) return null;
 
   return (
-    <div className="fixed bottom-6 left-1/2 z-40 w-[min(960px,calc(100vw-32px))] -translate-x-1/2">
+    <div className="fixed top-6 left-1/2 z-40 w-[min(960px,calc(100vw-32px))] -translate-x-1/2">
       <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-[color:var(--color-border)] bg-[color:var(--color-surface)]/95 px-3 py-2 shadow-2xl backdrop-blur">
         <div className="flex items-center gap-2 pl-1 pr-2">
           <span className="flex h-6 w-6 items-center justify-center rounded-full bg-[color:var(--color-accent)]/15 text-[11px] font-semibold text-[color:var(--color-accent)]">
@@ -142,7 +142,7 @@ export default function BulkActionsBar({
             </button>
             {tagsPanelOpen ? (
               <div
-                className="absolute bottom-[calc(100%+8px)] left-0 z-50 w-[min(340px,calc(100vw-48px))] rounded-2xl border border-[color:var(--color-border)] bg-[color:var(--color-surface)] p-3 shadow-2xl"
+                className="absolute left-0 top-[calc(100%+8px)] z-50 w-[min(340px,calc(100vw-48px))] rounded-2xl border border-[color:var(--color-border)] bg-[color:var(--color-surface)] p-3 shadow-2xl"
                 onMouseDown={(e) => e.preventDefault()}
               >
                 <p className="mb-2 text-[11.5px] text-[color:var(--color-muted-foreground)]">
@@ -288,7 +288,7 @@ function DropdownButton({
         <ChevronDown className="h-3 w-3" />
       </button>
       {open ? (
-        <div className="absolute bottom-[calc(100%+6px)] left-0 z-10 max-h-60 w-56 overflow-auto rounded-xl border border-[color:var(--color-border)] bg-[color:var(--color-surface)] py-1 shadow-xl">
+        <div className="absolute left-0 top-[calc(100%+6px)] z-10 max-h-60 w-56 overflow-auto rounded-xl border border-[color:var(--color-border)] bg-[color:var(--color-surface)] py-1 shadow-xl">
           {items.map((item) => (
             <button
               key={item.key}

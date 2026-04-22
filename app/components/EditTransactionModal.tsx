@@ -280,36 +280,39 @@ export default function EditTransactionModal({
         className="absolute inset-0 bg-black/50 backdrop-blur-sm"
       />
 
-      {/* Dialog */}
+      {/* Dialog: overflow solo sul corpo così i dropdown dei tag non vengono tagliati dal bordo della card */}
       <div
         ref={dialogRef}
         tabIndex={-1}
-        className="relative z-10 w-full max-w-[540px] max-h-[calc(100dvh-2rem)] overflow-y-auto rounded-2xl border border-[color:var(--color-border)] bg-[color:var(--color-surface)] p-4 sm:p-5 md:p-6 shadow-2xl outline-none"
+        className="relative z-10 flex max-h-[calc(100dvh-2rem)] w-full max-w-[540px] flex-col overflow-hidden rounded-2xl border border-[color:var(--color-border)] bg-[color:var(--color-surface)] shadow-2xl outline-none"
       >
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <h2
-              id="edit-tx-title"
-              className="text-[18px] font-semibold tracking-tight"
+        <div className="shrink-0 p-4 sm:p-5 sm:pb-0 md:p-6 md:pb-0">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <h2
+                id="edit-tx-title"
+                className="text-[18px] font-semibold tracking-tight"
+              >
+                Modifica transazione
+              </h2>
+              <p className="mt-1 text-[12px] text-[color:var(--color-muted-foreground)]">
+                Cambia i campi e salva. Le modifiche appariranno subito nella
+                lista.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label="Chiudi"
+              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-[color:var(--color-muted-foreground)] transition-colors hover:bg-[color:var(--color-surface-muted)] hover:text-[color:var(--color-foreground)]"
             >
-              Modifica transazione
-            </h2>
-            <p className="mt-1 text-[12px] text-[color:var(--color-muted-foreground)]">
-              Cambia i campi e salva. Le modifiche appariranno subito nella
-              lista.
-            </p>
+              <X className="h-4 w-4" />
+            </button>
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="Chiudi"
-            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-[color:var(--color-muted-foreground)] transition-colors hover:bg-[color:var(--color-surface-muted)] hover:text-[color:var(--color-foreground)]"
-          >
-            <X className="h-4 w-4" />
-          </button>
         </div>
 
-        <form onSubmit={handleSave} className="mt-5 grid grid-cols-1 gap-3 md:grid-cols-12">
+        <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-4 pt-5 sm:px-5 sm:pb-5 md:px-6 md:pb-6">
+        <form onSubmit={handleSave} className="grid grid-cols-1 gap-3 md:grid-cols-12">
           <div className="md:col-span-12">
             <Label>Descrizione</Label>
             {/*
@@ -481,6 +484,7 @@ export default function EditTransactionModal({
               suggestions={tagSuggestions}
               disabled={isBusy}
               placeholder="Es. casa, fisso…"
+              dropdownPlacement="above"
             />
           </div>
 
@@ -656,6 +660,7 @@ export default function EditTransactionModal({
             </div>
           </div>
         </form>
+        </div>
       </div>
     </div>
   );

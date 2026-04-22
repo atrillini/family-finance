@@ -39,6 +39,7 @@ import {
   rangeToIsoBounds,
   type DateRange,
 } from "@/lib/date-range";
+import { normalizeTagLabel } from "@/lib/tag-colors";
 
 type TypeFilter = "all" | "income" | "expense" | "subscription";
 
@@ -653,6 +654,67 @@ export default function TransactionsClient({
     [accounts, bulkUpdateFields]
   );
 
+  const distinctTagSuggestions = useMemo(() => {
+    const s = new Set<string>();
+    for (const tx of transactions) {
+      for (const tag of tx.tags ?? []) {
+        const n = normalizeTagLabel(tag);
+        if (n) s.add(n);
+      }
+    }
+    return Array.from(s).sort((a, b) => a.localeCompare(b));
+  }, [transactions]);
+
+  const handleBulkAddTags = useCallback(
+    async (extra: string[]) => {
+      const add = [
+        ...new Set(extra.map((t) => normalizeTagLabel(t)).filter(Boolean)),
+      ];
+      if (add.length === 0) return;
+      const ids = Array.from(selectedIds);
+      if (ids.length === 0) return;
+
+      const prev = transactions;
+      const updates = new Map<string, string[]>();
+      for (const id of ids) {
+        const row = prev.find((t) => t.id === id);
+        const merged = [...new Set([...(row?.tags ?? []), ...add])];
+        updates.set(id, merged);
+      }
+
+      setTransactions((cur) =>
+        cur.map((t) =>
+          updates.has(t.id) ? { ...t, tags: updates.get(t.id)! } : t
+        )
+      );
+
+      setBulkBusy("tags");
+      try {
+        if (!configured) {
+          toast.success(`Tag aggiunti a ${ids.length} transazioni`);
+          return;
+        }
+        const supabase = getSupabaseClient();
+        await Promise.all(
+          [...updates.entries()].map(([id, tags]) =>
+            supabase.from("transactions").update({ tags }).eq("id", id)
+          )
+        );
+        toast.success("Tag applicati", {
+          description: `${add.join(", ")} · ${ids.length} movimenti.`,
+        });
+      } catch (err) {
+        setTransactions(prev);
+        toast.error("Aggiornamento tag non riuscito", {
+          description: err instanceof Error ? err.message : String(err),
+        });
+      } finally {
+        setBulkBusy(null);
+      }
+    },
+    [selectedIds, transactions, configured]
+  );
+
   // ---------------------------------------------------------------------------
   // Render
   // ---------------------------------------------------------------------------
@@ -661,7 +723,9 @@ export default function TransactionsClient({
     : "Storico movimenti";
 
   return (
-    <div className="space-y-8">
+    <div
+      className={`space-y-8${selectedIds.size > 0 ? " pt-14" : ""}`}
+    >
       {!configured ? (
         <div className="card-surface flex items-start gap-3 p-4 text-[13px]">
           <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-[color:var(--color-accent)]" />
@@ -682,7 +746,10 @@ export default function TransactionsClient({
         </div>
       ) : null}
 
-      <AddTransaction accounts={accounts} />
+      <AddTransaction
+        accounts={accounts}
+        tagSuggestions={distinctTagSuggestions}
+      />
 
       <FiltersPanel
         typeFilter={typeFilter}
@@ -734,11 +801,14 @@ export default function TransactionsClient({
         onToggleTransfer={handleBulkToggleTransfer}
         onSetCategory={handleBulkSetCategory}
         onSetAccount={handleBulkSetAccount}
+        onAddTags={handleBulkAddTags}
+        tagSuggestions={distinctTagSuggestions}
       />
 
       <EditTransactionModal
         transaction={editing}
         accounts={accounts}
+        tagSuggestions={distinctTagSuggestions}
         onClose={() => setEditing(null)}
         onSave={handleSave}
         onDelete={handleDelete}
