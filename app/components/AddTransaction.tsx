@@ -7,7 +7,6 @@ import {
   Loader2,
   AlertCircle,
   Repeat,
-  Tag,
 } from "lucide-react";
 import { getSupabaseClient } from "@/lib/supabase";
 import type { Account } from "@/lib/mock-data";
@@ -16,6 +15,9 @@ import {
   type TransactionCategory,
   type TransactionAnalysis,
 } from "@/lib/gemini";
+import { normalizeTagLabel } from "@/lib/tag-colors";
+import TagChip from "./TagChip";
+import TagsInput from "./TagsInput";
 
 type Status =
   | { kind: "idle" }
@@ -25,10 +27,12 @@ type Status =
 
 type AddTransactionProps = {
   accounts?: Account[];
+  tagSuggestions?: string[];
 };
 
 export default function AddTransaction({
   accounts = [],
+  tagSuggestions = [],
 }: AddTransactionProps) {
   const [description, setDescription] = useState("");
   const [merchant, setMerchant] = useState("");
@@ -39,6 +43,7 @@ export default function AddTransaction({
   const [analysis, setAnalysis] = useState<TransactionAnalysis | null>(null);
   const [status, setStatus] = useState<Status>({ kind: "idle" });
   const [pending, startTransition] = useTransition();
+  const [extraTags, setExtraTags] = useState<string[]>([]);
 
   const reset = () => {
     setDescription("");
@@ -48,6 +53,7 @@ export default function AddTransaction({
     setAccountId("");
     setAnalysis(null);
     setType("expense");
+    setExtraTags([]);
   };
 
   async function fetchAnalysis(): Promise<TransactionAnalysis | null> {
@@ -135,12 +141,16 @@ export default function AddTransaction({
         const signedAmount =
           type === "expense" ? -Math.abs(parsedAmount) : Math.abs(parsedAmount);
 
+        const aiTags = (finalAnalysis?.tags ?? []).map(normalizeTagLabel).filter(Boolean);
+        const manual = extraTags.map(normalizeTagLabel).filter(Boolean);
+        const mergedTags = [...new Set([...aiTags, ...manual])];
+
         const { error } = await supabase.from("transactions").insert({
           description: description.trim(),
           merchant: merchant.trim() || null,
           category: finalCategory,
           amount: signedAmount,
-          tags: finalAnalysis?.tags ?? [],
+          tags: mergedTags,
           is_subscription: finalAnalysis?.is_subscription ?? false,
           is_transfer: finalAnalysis?.is_transfer ?? false,
           account_id: accountId || null,
@@ -308,6 +318,17 @@ export default function AddTransaction({
           </button>
         </div>
 
+        <div className="md:col-span-12">
+          <Label>Tag aggiuntivi (opzionale)</Label>
+          <TagsInput
+            value={extraTags}
+            onChange={setExtraTags}
+            suggestions={tagSuggestions}
+            disabled={isBusy}
+            placeholder="Aggiungi o scegli dai suggerimenti…"
+          />
+        </div>
+
         {analysis && (analysis.tags.length > 0 || analysis.is_subscription) ? (
           <div className="md:col-span-12 flex flex-wrap items-center gap-2 rounded-xl border border-[color:var(--color-border)] bg-[color:var(--color-surface-muted)]/60 px-3 py-2.5">
             <span className="inline-flex items-center gap-1 text-[11px] font-medium text-[color:var(--color-muted-foreground)]">
@@ -321,13 +342,7 @@ export default function AddTransaction({
               </span>
             ) : null}
             {analysis.tags.map((t) => (
-              <span
-                key={t}
-                className="inline-flex items-center gap-1 rounded-full border border-[color:var(--color-border)] bg-[color:var(--color-surface)] px-2 py-1 text-[11px] font-medium text-[color:var(--color-foreground)]"
-              >
-                <Tag className="h-3 w-3 text-[color:var(--color-muted-foreground)]" />
-                {t}
-              </span>
+              <TagChip key={t} tag={t} size="sm" />
             ))}
           </div>
         ) : null}

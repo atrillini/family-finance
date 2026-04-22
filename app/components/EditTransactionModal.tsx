@@ -17,6 +17,7 @@ import {
   TRANSACTION_CATEGORIES,
   type TransactionCategory,
 } from "@/lib/gemini";
+import TagsInput from "./TagsInput";
 
 export type EditTransactionPatch = {
   description: string;
@@ -33,6 +34,8 @@ export type EditTransactionPatch = {
 type Props = {
   transaction: Transaction | null;
   accounts?: Account[];
+  /** Tag già usati nel progetto — autocompletamento nell’editor */
+  tagSuggestions?: string[];
   onClose: () => void;
   onSave: (
     id: string,
@@ -50,6 +53,7 @@ type Props = {
 export default function EditTransactionModal({
   transaction,
   accounts = [],
+  tagSuggestions = [],
   onClose,
   onSave,
   onDelete,
@@ -64,7 +68,7 @@ export default function EditTransactionModal({
   const [category, setCategory] = useState<TransactionCategory>("Altro");
   const [accountId, setAccountId] = useState<string | "">("");
   const [date, setDate] = useState("");
-  const [tagsStr, setTagsStr] = useState("");
+  const [tags, setTags] = useState<string[]>([]);
   const [isSubscription, setIsSubscription] = useState(false);
   const [isTransfer, setIsTransfer] = useState(false);
   const [busy, setBusy] = useState<"saving" | "deleting" | null>(null);
@@ -96,7 +100,7 @@ export default function EditTransactionModal({
     setCategory(transaction.category);
     setAccountId(transaction.account_id ?? "");
     setDate(toInputDate(transaction.date));
-    setTagsStr((transaction.tags ?? []).join(", "));
+    setTags([...(transaction.tags ?? [])]);
     setIsSubscription(Boolean(transaction.is_subscription));
     setIsTransfer(Boolean(transaction.is_transfer));
     setBusy(null);
@@ -162,18 +166,13 @@ export default function EditTransactionModal({
 
     const signed =
       type === "expense" ? -Math.abs(parsedAmount) : Math.abs(parsedAmount);
-    const tags = tagsStr
-      .split(",")
-      .map((t) => t.trim().toLowerCase())
-      .filter(Boolean);
-
     const patch: EditTransactionPatch = {
       description: description.trim(),
       merchant: merchant.trim() || null,
       category,
       amount: signed,
       date: fromInputDate(date, transaction.date),
-      tags,
+      tags: [...tags],
       is_subscription: isSubscription,
       is_transfer: isTransfer,
       account_id: accountId || null,
@@ -224,10 +223,6 @@ export default function EditTransactionModal({
     }
     setRuleSaving(true);
     try {
-      const tags = tagsStr
-        .split(",")
-        .map((t) => t.trim().toLowerCase())
-        .filter(Boolean);
       const resp = await fetch("/api/rules", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -235,7 +230,7 @@ export default function EditTransactionModal({
           match_type: ruleMatchType,
           pattern: rulePattern.trim(),
           category,
-          tags,
+          tags: [...tags],
           merchant: merchant.trim() ? merchant.trim() : null,
           is_subscription: isSubscription,
           is_transfer: isTransfer,
@@ -479,12 +474,13 @@ export default function EditTransactionModal({
           </div>
 
           <div className="md:col-span-12">
-            <Label>Tag (separati da virgola)</Label>
-            <Input
-              value={tagsStr}
-              onChange={(e) => setTagsStr(e.target.value)}
+            <Label>Tag</Label>
+            <TagsInput
+              value={tags}
+              onChange={setTags}
+              suggestions={tagSuggestions}
               disabled={isBusy}
-              placeholder="casa, fisso"
+              placeholder="Es. casa, fisso…"
             />
           </div>
 
@@ -563,10 +559,10 @@ export default function EditTransactionModal({
                 <p className="mt-2 text-[11.5px] text-[color:var(--color-muted-foreground)]">
                   La regola userà la categoria corrente{" "}
                   <strong>{category}</strong>
-                  {tagsStr.trim() ? (
+                  {tags.length > 0 ? (
                     <>
                       {" "}
-                      con tag <strong>{tagsStr.trim()}</strong>
+                      con tag <strong>{tags.join(", ")}</strong>
                     </>
                   ) : null}
                   {isSubscription ? ", marcata ricorrente" : ""}

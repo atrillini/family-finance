@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type MouseEvent } from "react";
 import {
   ShoppingBag,
   UtensilsCrossed,
@@ -31,6 +31,7 @@ import {
   type Transaction,
 } from "@/lib/mock-data";
 import type { TransactionCategory } from "@/lib/gemini";
+import TagChip from "./TagChip";
 
 const CATEGORY_ICONS: Record<TransactionCategory, LucideIcon> = {
   Alimentari: ShoppingBag,
@@ -378,14 +379,22 @@ export default function TransactionsTable({
                               {t.category}
                             </span>
                           )}
-                          {t.tags?.slice(0, 2).map((tag) => (
-                            <span
-                              key={tag}
-                              className="inline-flex items-center rounded-full bg-[color:var(--color-surface-muted)]/60 px-1.5 py-0.5 text-[10.5px] text-[color:var(--color-muted-foreground)]"
-                            >
-                              {tag}
-                            </span>
-                          ))}
+                          {t.tags?.slice(0, 2).map((tag) =>
+                            onTagClick ? (
+                              <TagChip
+                                key={tag}
+                                tag={tag}
+                                size="sm"
+                                title={`Filtra per tag '${tag}'`}
+                                onClick={(e: MouseEvent) => {
+                                  e.stopPropagation();
+                                  onTagClick(tag);
+                                }}
+                              />
+                            ) : (
+                              <TagChip key={tag} tag={tag} size="sm" />
+                            )
+                          )}
                           {t.tags && t.tags.length > 2 ? (
                             <span className="text-[10.5px] text-[color:var(--color-muted-foreground)]">
                               +{t.tags.length - 2}
@@ -420,26 +429,17 @@ export default function TransactionsTable({
                       )}
                       {t.tags?.slice(0, 2).map((tag) =>
                         onTagClick ? (
-                          <button
+                          <TagChip
                             key={tag}
-                            type="button"
-                            onClick={(e) => {
+                            tag={tag}
+                            title={`Filtra per tag '${tag}'`}
+                            onClick={(e: MouseEvent) => {
                               e.stopPropagation();
                               onTagClick(tag);
                             }}
-                            onKeyDown={(e) => e.stopPropagation()}
-                            title={`Filtra per tag '${tag}'`}
-                            className="inline-flex items-center rounded-full bg-[color:var(--color-surface-muted)]/60 px-2 py-0.5 text-[11px] text-[color:var(--color-muted-foreground)] transition-colors hover:bg-[color:var(--color-accent)]/10 hover:text-[color:var(--color-accent)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--color-accent)]/40"
-                          >
-                            {tag}
-                          </button>
+                          />
                         ) : (
-                          <span
-                            key={tag}
-                            className="inline-flex items-center rounded-full bg-[color:var(--color-surface-muted)]/60 px-2 py-0.5 text-[11px] text-[color:var(--color-muted-foreground)]"
-                          >
-                            {tag}
-                          </span>
+                          <TagChip key={tag} tag={tag} />
                         )
                       )}
                       {t.tags && t.tags.length > 2 ? (

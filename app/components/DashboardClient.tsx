@@ -27,6 +27,7 @@ import {
   type Account,
   type Transaction,
 } from "@/lib/mock-data";
+import { normalizeTagLabel } from "@/lib/tag-colors";
 import {
   getSupabaseClient,
   isSupabaseConfigured,
@@ -852,6 +853,67 @@ export default function DashboardClient({
     [accounts, bulkUpdateFields]
   );
 
+  const distinctTagSuggestions = useMemo(() => {
+    const s = new Set<string>();
+    for (const tx of transactions) {
+      for (const tag of tx.tags ?? []) {
+        const n = normalizeTagLabel(tag);
+        if (n) s.add(n);
+      }
+    }
+    return Array.from(s).sort((a, b) => a.localeCompare(b));
+  }, [transactions]);
+
+  const handleBulkAddTags = useCallback(
+    async (extra: string[]) => {
+      const add = [
+        ...new Set(extra.map((t) => normalizeTagLabel(t)).filter(Boolean)),
+      ];
+      if (add.length === 0) return;
+      const ids = Array.from(selectedIds);
+      if (ids.length === 0) return;
+
+      const prev = transactions;
+      const updates = new Map<string, string[]>();
+      for (const id of ids) {
+        const row = prev.find((t) => t.id === id);
+        const merged = [...new Set([...(row?.tags ?? []), ...add])];
+        updates.set(id, merged);
+      }
+
+      setTransactions((cur) =>
+        cur.map((t) =>
+          updates.has(t.id) ? { ...t, tags: updates.get(t.id)! } : t
+        )
+      );
+
+      setBulkBusy("tags");
+      try {
+        if (!configured) {
+          toast.success(`Tag aggiunti a ${ids.length} transazioni`);
+          return;
+        }
+        const supabase = getSupabaseClient();
+        await Promise.all(
+          [...updates.entries()].map(([id, tags]) =>
+            supabase.from("transactions").update({ tags }).eq("id", id)
+          )
+        );
+        toast.success("Tag applicati", {
+          description: `${add.join(", ")} · ${ids.length} movimenti.`,
+        });
+      } catch (err) {
+        setTransactions(prev);
+        toast.error("Aggiornamento tag non riuscito", {
+          description: err instanceof Error ? err.message : String(err),
+        });
+      } finally {
+        setBulkBusy(null);
+      }
+    },
+    [selectedIds, transactions, configured]
+  );
+
   // ---------------------------------------------------------------------------
   // Disconnect banca: lo richiamiamo dal modal di modifica conto. Una volta
   // revocata la requisition su GoCardless e (opzionalmente) cancellate le
@@ -1252,7 +1314,10 @@ export default function DashboardClient({
         </div>
       </div>
 
-      <AddTransaction accounts={accounts} />
+      <AddTransaction
+        accounts={accounts}
+        tagSuggestions={distinctTagSuggestions}
+      />
 
       {loading && displayed.length === 0 ? (
         <div className="card-surface flex items-center justify-center gap-2 p-10 text-[13px] text-[color:var(--color-muted-foreground)]">
@@ -1285,6 +1350,8 @@ export default function DashboardClient({
         onToggleTransfer={handleBulkToggleTransfer}
         onSetCategory={handleBulkSetCategory}
         onSetAccount={handleBulkSetAccount}
+        onAddTags={handleBulkAddTags}
+        tagSuggestions={distinctTagSuggestions}
       />
 
       <AskAI transactions={displayed} dateRange={dateRange} />
@@ -1292,6 +1359,7 @@ export default function DashboardClient({
       <EditTransactionModal
         transaction={editing}
         accounts={accounts}
+        tagSuggestions={distinctTagSuggestions}
         onClose={() => setEditing(null)}
         onSave={handleSave}
         onDelete={handleDelete}

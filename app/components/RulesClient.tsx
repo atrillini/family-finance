@@ -16,6 +16,7 @@ import {
 import { toast } from "sonner";
 import type { CategorizationRuleRow } from "@/lib/supabase";
 import { TRANSACTION_CATEGORIES } from "@/lib/gemini";
+import TagChip from "./TagChip";
 
 type MatchType = CategorizationRuleRow["match_type"];
 
@@ -273,12 +274,7 @@ export default function RulesClient() {
                 {rule.tags?.length ? (
                   <div className="flex flex-wrap gap-1">
                     {rule.tags.map((t) => (
-                      <span
-                        key={t}
-                        className="rounded-full bg-[color:var(--color-surface-muted)] px-2 py-0.5 text-[11px] text-[color:var(--color-muted-foreground)]"
-                      >
-                        #{t}
-                      </span>
+                      <TagChip key={t} tag={t} size="sm" />
                     ))}
                   </div>
                 ) : null}

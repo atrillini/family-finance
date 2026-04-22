@@ -6,9 +6,11 @@ import {
   ChevronDown,
   Loader2,
   Sparkles,
+  Tag,
   Trash2,
   X,
 } from "lucide-react";
+import TagsInput from "./TagsInput";
 import type { Account } from "@/lib/mock-data";
 import {
   TRANSACTION_CATEGORIES,
@@ -30,6 +32,10 @@ type Props = {
   onSetAccount?: (accountId: string | null) => Promise<void> | void;
   /** Elimina con undo. */
   onDelete: () => Promise<void> | void;
+  /** Unisce questi tag a tutte le transazioni selezionate (senza rimuovere gli esistenti). */
+  onAddTags?: (tags: string[]) => Promise<void> | void;
+  /** Tag già presenti nei dati — suggerimenti nell’azione massiva */
+  tagSuggestions?: string[];
   /** Deseleziona tutto. */
   onClear: () => void;
   /** ID di un'azione in corso (per mostrare lo spinner). */
@@ -49,9 +55,14 @@ export default function BulkActionsBar({
   onSetCategory,
   onSetAccount,
   onDelete,
+  onAddTags,
+  tagSuggestions = [],
   onClear,
   busy,
 }: Props) {
+  const [tagsPanelOpen, setTagsPanelOpen] = useState(false);
+  const [pendingTags, setPendingTags] = useState<string[]>([]);
+
   if (count === 0) return null;
 
   return (
@@ -104,6 +115,75 @@ export default function BulkActionsBar({
               onClick: () => onSetCategory(c),
             }))}
           />
+        ) : null}
+
+        {onAddTags ? (
+          <div
+            className="relative"
+            onBlur={(e) => {
+              const next = e.relatedTarget as Node | null;
+              if (next && e.currentTarget.contains(next)) return;
+              setTagsPanelOpen(false);
+            }}
+          >
+            <button
+              type="button"
+              onClick={() => setTagsPanelOpen((v) => !v)}
+              disabled={busy === "tags"}
+              className="inline-flex h-8 items-center gap-1.5 rounded-full border border-[color:var(--color-border)] px-3 text-[12.5px] font-medium transition-colors hover:border-[color:var(--color-accent)] hover:bg-[color:var(--color-accent)]/10 hover:text-[color:var(--color-accent)] disabled:opacity-60"
+            >
+              {busy === "tags" ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Tag className="h-3.5 w-3.5" />
+              )}
+              Aggiungi tag
+              <ChevronDown className="h-3 w-3" />
+            </button>
+            {tagsPanelOpen ? (
+              <div
+                className="absolute bottom-[calc(100%+8px)] left-0 z-50 w-[min(340px,calc(100vw-48px))] rounded-2xl border border-[color:var(--color-border)] bg-[color:var(--color-surface)] p-3 shadow-2xl"
+                onMouseDown={(e) => e.preventDefault()}
+              >
+                <p className="mb-2 text-[11.5px] text-[color:var(--color-muted-foreground)]">
+                  I tag vengono aggiunti a tutte le righe selezionate (unione con
+                  quelli già presenti).
+                </p>
+                <TagsInput
+                  value={pendingTags}
+                  onChange={setPendingTags}
+                  suggestions={tagSuggestions}
+                  disabled={busy === "tags"}
+                  placeholder="cerca o crea tag…"
+                  showHint={false}
+                />
+                <div className="mt-3 flex justify-end gap-2">
+                  <button
+                    type="button"
+                    className="rounded-lg border border-[color:var(--color-border)] px-3 py-1.5 text-[12px] font-medium hover:bg-[color:var(--color-surface-muted)]"
+                    onClick={() => {
+                      setPendingTags([]);
+                      setTagsPanelOpen(false);
+                    }}
+                  >
+                    Chiudi
+                  </button>
+                  <button
+                    type="button"
+                    disabled={busy === "tags" || pendingTags.length === 0}
+                    className="rounded-lg bg-[color:var(--color-accent)] px-3 py-1.5 text-[12px] font-semibold text-white disabled:opacity-50"
+                    onClick={() => {
+                      void onAddTags(pendingTags);
+                      setPendingTags([]);
+                      setTagsPanelOpen(false);
+                    }}
+                  >
+                    Applica
+                  </button>
+                </div>
+              </div>
+            ) : null}
+          </div>
         ) : null}
 
         {onSetAccount && accounts.length > 0 ? (
