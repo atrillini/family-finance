@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, type MouseEvent } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   ShoppingBag,
   UtensilsCrossed,
@@ -31,7 +31,6 @@ import {
   type Transaction,
 } from "@/lib/mock-data";
 import type { TransactionCategory } from "@/lib/gemini";
-import TagChip from "./TagChip";
 
 const CATEGORY_ICONS: Record<TransactionCategory, LucideIcon> = {
   Alimentari: ShoppingBag,
@@ -315,6 +314,32 @@ export default function TransactionsTable({
                             </span>
                           ) : null}
                         </div>
+
+                        {t.tags && t.tags.length > 0 ? (
+                          <p className="mt-0.5 text-[11px] leading-snug text-zinc-500">
+                            {t.tags.map((tag, i) => (
+                              <span key={`${tag}-${i}`}>
+                                {i > 0 ? " " : null}
+                                {onTagClick ? (
+                                  <button
+                                    type="button"
+                                    title={`Filtra per ${tag}`}
+                                    className="inline cursor-pointer border-0 bg-transparent p-0 align-baseline font-inherit text-inherit hover:underline"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      onTagClick(tag);
+                                    }}
+                                  >
+                                    #{tag}
+                                  </button>
+                                ) : (
+                                  <>{`#${tag}`}</>
+                                )}
+                              </span>
+                            ))}
+                          </p>
+                        ) : null}
+
                         {/*
                           Mostriamo il `merchant` sotto SOLO se:
                            - è valorizzato e
@@ -379,27 +404,6 @@ export default function TransactionsTable({
                               {t.category}
                             </span>
                           )}
-                          {t.tags?.slice(0, 2).map((tag) =>
-                            onTagClick ? (
-                              <TagChip
-                                key={tag}
-                                tag={tag}
-                                size="sm"
-                                title={`Filtra per tag '${tag}'`}
-                                onClick={(e: MouseEvent) => {
-                                  e.stopPropagation();
-                                  onTagClick(tag);
-                                }}
-                              />
-                            ) : (
-                              <TagChip key={tag} tag={tag} size="sm" />
-                            )
-                          )}
-                          {t.tags && t.tags.length > 2 ? (
-                            <span className="text-[10.5px] text-[color:var(--color-muted-foreground)]">
-                              +{t.tags.length - 2}
-                            </span>
-                          ) : null}
                           <span className="sm:hidden text-[10.5px] text-[color:var(--color-muted-foreground)]">
                             · {formatDate(t.date)}
                           </span>
@@ -427,26 +431,6 @@ export default function TransactionsTable({
                           {t.category}
                         </span>
                       )}
-                      {t.tags?.slice(0, 2).map((tag) =>
-                        onTagClick ? (
-                          <TagChip
-                            key={tag}
-                            tag={tag}
-                            title={`Filtra per tag '${tag}'`}
-                            onClick={(e: MouseEvent) => {
-                              e.stopPropagation();
-                              onTagClick(tag);
-                            }}
-                          />
-                        ) : (
-                          <TagChip key={tag} tag={tag} />
-                        )
-                      )}
-                      {t.tags && t.tags.length > 2 ? (
-                        <span className="text-[11px] text-[color:var(--color-muted-foreground)]">
-                          +{t.tags.length - 2}
-                        </span>
-                      ) : null}
                     </div>
                   </td>
                   <td className="hidden sm:table-cell px-3 sm:px-4 md:px-6 py-4 text-[13px] text-[color:var(--color-muted-foreground)] whitespace-nowrap">
