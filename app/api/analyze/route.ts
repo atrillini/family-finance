@@ -17,7 +17,7 @@ export const runtime = "nodejs";
  * POST /api/analyze
  * Body: {
  *   query: string,
- *   transactions: FinanceTx[],
+ *   transactions: FinanceTx[] (description, amount, category, date, tags, merchant),
  *   dateRange?: { fromIso: string, toIso: string, label?: string } | null
  * }
  * Risposta: { answer: string } (Markdown)

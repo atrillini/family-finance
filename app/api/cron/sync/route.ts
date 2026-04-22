@@ -1,4 +1,6 @@
 import { NextResponse } from "next/server";
+
+import { verifyCronRequest } from "@/lib/cron-auth";
 import { isGoCardlessConfigured } from "@/lib/gocardless";
 import {
   getSupabaseAdminClient,
@@ -27,13 +29,6 @@ type CronAccountRow = {
   gocardless_account_id: string | null;
 };
 
-function verifyCronSecret(request: Request): boolean {
-  const secret = process.env.CRON_SECRET?.trim();
-  if (!secret) return false;
-  const auth = request.headers.get("authorization");
-  return auth === `Bearer ${secret}`;
-}
-
 function parseMaxAccounts(): number {
   const raw = process.env.CRON_SYNC_MAX_ACCOUNTS_PER_RUN?.trim();
   const n = raw ? Number.parseInt(raw, 10) : NaN;
@@ -51,10 +46,6 @@ function sortAccountsForCron(a: CronAccountRow, b: CronAccountRow): number {
 }
 
 async function runCron(request: Request) {
-  if (!verifyCronSecret(request)) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-
   if (!process.env.CRON_SECRET?.trim()) {
     return NextResponse.json(
       {
@@ -63,6 +54,10 @@ async function runCron(request: Request) {
       },
       { status: 500 }
     );
+  }
+
+  if (!verifyCronRequest(request)) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
   if (!isGoCardlessConfigured()) {

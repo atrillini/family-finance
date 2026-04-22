@@ -56,8 +56,11 @@ export default function AskAI({ transactions, dateRange = null }: AskAIProps) {
       amount: t.amount,
       category: t.category,
       date: t.date,
-      tags: [...(t.tags ?? [])],
-      merchant: t.merchant ?? null,
+      tags: Array.isArray(t.tags) ? [...t.tags] : [],
+      merchant:
+        typeof t.merchant === "string" && t.merchant.trim()
+          ? t.merchant.trim()
+          : null,
     }));
 
     // Serializziamo il range come ISO bounds + label leggibile. Al backend

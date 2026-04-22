@@ -2,6 +2,8 @@ import { createServerClient } from "@supabase/ssr";
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
+import { verifyCronRequest } from "@/lib/cron-auth";
+
 const LOGIN_PATH = "/login";
 const REGISTER_PATH = "/register";
 
@@ -80,6 +82,14 @@ export async function proxy(request: NextRequest) {
     const path = request.nextUrl.pathname;
 
     if (!user && !isPublicPath(path)) {
+      /** Cron Vercel: niente cookie sessione; accesso solo con Bearer CRON_SECRET */
+      if (path.startsWith("/api/cron/")) {
+        if (verifyCronRequest(request)) {
+          return response;
+        }
+        return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      }
+
       const redirectUrl = request.nextUrl.clone();
       redirectUrl.pathname = LOGIN_PATH;
       redirectUrl.searchParams.set("next", path);

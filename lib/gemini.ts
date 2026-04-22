@@ -376,14 +376,16 @@ export async function parseNaturalLanguageQuery(
 
 /**
  * Forma minima delle transazioni attesa da `analyzeFinance`.
- * `tags` e `merchant` sono necessari per domande tipo "uscite con tag X".
+ * Campi essenziali; `tags` e `merchant` servono per domande tipo "uscite con tag X".
  */
 export type FinanceTx = {
   description: string;
   amount: number;
   category: string;
   date: string;
+  /** Tag in minuscolo o misti; array vuoto se assenti. */
   tags: string[];
+  /** Esercente o null. */
   merchant: string | null;
 };
 
@@ -455,8 +457,11 @@ export async function analyzeFinance(
     amount: Number(t.amount),
     category: t.category,
     date: t.date,
-    tags: Array.isArray(t.tags) ? t.tags : [],
-    merchant: t.merchant ?? null,
+    tags: parseTagsField(t.tags),
+    merchant:
+      typeof t.merchant === "string" && t.merchant.trim()
+        ? t.merchant.trim()
+        : null,
   }));
 
   // Sezione "periodo selezionato": formattiamo in italiano il range così
@@ -503,7 +508,8 @@ export async function analyzeFinance(
     "Regole:",
     "- Se l'utente chiede un totale su un tag, un merchant o una categoria, usa **solo** le transazioni nel JSON che soddisfano il criterio; non inventare dati.",
     "- Se dopo aver filtrato non c'è nessuna riga, dillo chiaramente. Non offrire un elenco di sole categorie come sostituto quando la domanda riguarda i **tag**, a meno che non serva davvero.",
-    "- Se l'utente chiede un totale (es. 'totale Netflix'), somma gli importi pertinenti (di solito uscite = negativi) e rispondi con la cifra esatta.",
+    "- Per totali ed entrate/uscite rispetta la convenzione importi del JSON (negativo = spesa, positivo = entrata).",
+    "- Se l'utente chiede un totale (es. 'totale Netflix'), identifica le righe pertinenti e somma con la convenzione segno sopra.",
     "- Se l'utente chiede un consiglio, analizza le tendenze (es. 'stai spendendo molto in svago questo mese').",
     "- Rispondi sempre in Markdown per rendere i numeri in grassetto e le liste leggibili.",
     "- Usa il formato € (Euro) per gli importi, es. **€ 42,50**.",
