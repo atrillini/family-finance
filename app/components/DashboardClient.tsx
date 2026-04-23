@@ -40,15 +40,19 @@ import {
   getPreviousRange,
   type DateRange,
 } from "@/lib/date-range";
+import { formatPeriodHeading } from "@/lib/period-labels";
+import { fetchTransactionsBatched } from "@/lib/supabase-transactions-batched";
+import { dateRangeFromIso } from "@/lib/default-month-range";
 
 type Props = {
-  monthLabel: string;
+  /** Mese corrente (1° — oggi) serializzato dal server per idratazione coerente. */
+  defaultRangeIso: { fromIso: string; toIso: string };
   fallback?: Transaction[];
   accountsFallback?: Account[];
 };
 
 export default function DashboardClient({
-  monthLabel,
+  defaultRangeIso,
   fallback = [],
   accountsFallback = [],
 }: Props) {
@@ -60,7 +64,9 @@ export default function DashboardClient({
   const [error, setError] = useState<string | null>(null);
   const [activeQuery, setActiveQuery] = useState<ParsedQuery | null>(null);
   const [editing, setEditing] = useState<Transaction | null>(null);
-  const [dateRange, setDateRange] = useState<DateRange | null>(null);
+  const [dateRange, setDateRange] = useState<DateRange | null>(() =>
+    dateRangeFromIso(defaultRangeIso)
+  );
   const [connectOpen, setConnectOpen] = useState(false);
   const [syncingIds, setSyncingIds] = useState<Set<string>>(new Set());
   const [editingAccount, setEditingAccount] = useState<Account | null>(null);
@@ -101,36 +107,29 @@ export default function DashboardClient({
 
     async function load() {
       setLoading(true);
+      try {
+        const { fromIso, toIso } = dateRange
+          ? rangeToIsoBounds(dateRange)
+          : { fromIso: undefined as string | undefined, toIso: undefined as string | undefined };
 
-      let query = supabase
-        .from("transactions")
-        .select("*")
-        .order("date", { ascending: false })
-        .limit(200);
+        const data = await fetchTransactionsBatched(supabase, {
+          dateFromIso: fromIso,
+          dateToIso: toIso,
+          modify: activeQuery
+            ? (q) => applySupabaseFilter(q, activeQuery.filter)
+            : undefined,
+        });
 
-      if (activeQuery) {
-        query = applySupabaseFilter(query, activeQuery.filter);
-      }
-
-      // Filtro temporale: se l'utente ha selezionato un periodo restringiamo
-      // la query con gte/lte sulla colonna `date` (timestamptz). Usiamo le
-      // ISO string normalizzate a inizio/fine giornata per essere inclusivi.
-      if (dateRange) {
-        const { fromIso, toIso } = rangeToIsoBounds(dateRange);
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        query = (query as any).gte("date", fromIso).lte("date", toIso);
-      }
-
-      const { data, error } = await query;
-
-      if (cancelled) return;
-      if (error) {
-        setError(error.message);
-      } else {
-        setTransactions((data ?? []) as Transaction[]);
+        if (cancelled) return;
+        setTransactions(data as Transaction[]);
         setError(null);
+      } catch (e) {
+        if (cancelled) return;
+        setError(e instanceof Error ? e.message : "Errore di caricamento");
+        setTransactions([]);
+      } finally {
+        if (!cancelled) setLoading(false);
       }
-      setLoading(false);
     }
 
     load();
@@ -305,16 +304,17 @@ export default function DashboardClient({
     });
   }, [baseRows, headerQuery]);
 
-  // Entrate/uscite del mese dalle transazioni visibili.
-  // Il `balance` invece è ora la somma dei saldi dei conti: se c'è almeno
-  // un conto registrato quello è l'unico dato "patrimoniale" affidabile
-  // (le transazioni visualizzate sono un sottoinsieme filtrato); se non ci
-  // sono conti cadiamo sul vecchio calcolo basato sul cashflow.
+  const periodHeading = useMemo(
+    () => formatPeriodHeading(dateRange),
+    [dateRange]
+  );
+
+  // Entrate/uscite: somma su `displayed` (stesso sottoinsieme della tabella)
+  // con `computeMonthlySummary` → giroconti esclusi. Saldo = patrimonio
+  // liquido sui conti (esclusi pocket), indipendente dal periodo.
   const summary = useMemo(() => {
     const base = computeMonthlySummary(displayed);
     if (accounts.length > 0) {
-      // `computeAccountsTotal` esclude per default i conti pocket/salvadanaio
-      // così il Saldo Totale rispecchia la liquidità realmente disponibile.
       return { ...base, balance: computeAccountsTotal(accounts) };
     }
     return base;
@@ -372,7 +372,7 @@ export default function DashboardClient({
         const summary = rows.reduce(
           (acc, r) => {
             if (r.is_transfer) return acc;
-            if (r.amount >= 0) acc.income += Number(r.amount);
+            if (Number(r.amount) >= 0) acc.income += Number(r.amount);
             else acc.expenses += Math.abs(Number(r.amount));
             return acc;
           },
@@ -1328,7 +1328,7 @@ export default function DashboardClient({
 
       <SummaryCards
         summary={summary}
-        monthLabel={monthLabel}
+        periodLabel={periodHeading}
         pocketBalance={pocketBalance}
         previous={previousSummary}
       />

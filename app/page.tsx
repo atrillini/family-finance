@@ -4,14 +4,10 @@ import DashboardClient from "./components/DashboardClient";
 import { MOCK_ACCOUNTS, MOCK_TRANSACTIONS } from "@/lib/mock-data";
 import { greetingFirstName, initialsFromUser } from "@/lib/auth-display";
 import { getSessionUser } from "@/lib/supabase/server-session";
+import { getDefaultMonthRangeIso } from "@/lib/default-month-range";
 
 export default async function DashboardPage() {
-  const monthLabel = new Intl.DateTimeFormat("it-IT", {
-    month: "long",
-    year: "numeric",
-  }).format(new Date());
-  const monthLabelCap =
-    monthLabel.charAt(0).toUpperCase() + monthLabel.slice(1);
+  const defaultRangeIso = getDefaultMonthRangeIso();
 
   const user = await getSessionUser();
   const firstName = greetingFirstName(user);
@@ -21,7 +17,7 @@ export default async function DashboardPage() {
     <div className="mx-auto w-full max-w-[1600px] px-4 sm:px-6 md:px-10 py-6 md:py-10 space-y-8">
       <PageHeader
         title={`Ciao, ${firstName}`}
-        subtitle={`Ecco il quadro della tua famiglia per ${monthLabelCap}.`}
+        subtitle="Ecco il quadro della tua famiglia — periodo e totali sono nelle card qui sotto."
         avatarInitials={avatarInitials}
       />
 
@@ -29,7 +25,7 @@ export default async function DashboardPage() {
           `useSearchParams()` per gestire il redirect da /api/callback. */}
       <Suspense fallback={null}>
         <DashboardClient
-          monthLabel={monthLabelCap}
+          defaultRangeIso={defaultRangeIso}
           fallback={MOCK_TRANSACTIONS}
           accountsFallback={MOCK_ACCOUNTS}
         />

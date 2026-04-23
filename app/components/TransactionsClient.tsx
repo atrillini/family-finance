@@ -20,6 +20,7 @@ import EditTransactionModal, {
   type EditTransactionPatch,
 } from "./EditTransactionModal";
 import {
+  computeMonthlySummary,
   formatCurrency,
   type Account,
   type Transaction,
@@ -37,13 +38,17 @@ import {
   formatRangeLabel,
   isDateInRange,
   rangeToIsoBounds,
+  rangesEqual,
   type DateRange,
 } from "@/lib/date-range";
 import { normalizeTagLabel } from "@/lib/tag-colors";
+import { dateRangeFromIso } from "@/lib/default-month-range";
+import { fetchTransactionsBatched } from "@/lib/supabase-transactions-batched";
 
 type TypeFilter = "all" | "income" | "expense" | "subscription";
 
 type Props = {
+  defaultRangeIso: { fromIso: string; toIso: string };
   fallback?: Transaction[];
   accountsFallback?: Account[];
 };
@@ -67,6 +72,7 @@ type Props = {
  * `transactions`, `accounts`, `save`, `delete` resta la mossa naturale.
  */
 export default function TransactionsClient({
+  defaultRangeIso,
   fallback = [],
   accountsFallback = [],
 }: Props) {
@@ -86,7 +92,9 @@ export default function TransactionsClient({
   const [typeFilter, setTypeFilter] = useState<TypeFilter>("all");
   const [accountFilter, setAccountFilter] = useState<string>("");
   const [categoryFilter, setCategoryFilter] = useState<string>("");
-  const [dateRange, setDateRange] = useState<DateRange | null>(null);
+  const [dateRange, setDateRange] = useState<DateRange | null>(() =>
+    dateRangeFromIso(defaultRangeIso)
+  );
 
   const { query: headerQuery, setQuery: setHeaderQuery } = useHeaderSearch();
 
@@ -106,26 +114,26 @@ export default function TransactionsClient({
 
     async function load() {
       setLoading(true);
-      let query = supabase
-        .from("transactions")
-        .select("*")
-        .order("date", { ascending: false })
-        .limit(500);
+      try {
+        const { fromIso, toIso } = dateRange
+          ? rangeToIsoBounds(dateRange)
+          : { fromIso: undefined as string | undefined, toIso: undefined as string | undefined };
 
-      if (dateRange) {
-        const { fromIso, toIso } = rangeToIsoBounds(dateRange);
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        query = (query as any).gte("date", fromIso).lte("date", toIso);
-      }
+        const data = await fetchTransactionsBatched(supabase, {
+          dateFromIso: fromIso,
+          dateToIso: toIso,
+        });
 
-      const { data, error } = await query;
-      if (cancelled) return;
-      if (error) setError(error.message);
-      else {
-        setTransactions((data ?? []) as Transaction[]);
+        if (cancelled) return;
+        setTransactions(data as Transaction[]);
         setError(null);
+      } catch (e) {
+        if (cancelled) return;
+        setError(e instanceof Error ? e.message : "Errore di caricamento");
+        setTransactions([]);
+      } finally {
+        if (!cancelled) setLoading(false);
       }
-      setLoading(false);
     }
     load();
 
@@ -263,31 +271,31 @@ export default function TransactionsClient({
     dateRange,
   ]);
 
-  // Totali informativi della selezione corrente (mostrati nel pannello filtri).
+  // Totali informativi della selezione corrente — stessa semantica delle card
+  // home: giroconti esclusi (`computeMonthlySummary`).
   const totals = useMemo(() => {
-    return displayed.reduce(
-      (acc, t) => {
-        if (t.amount >= 0) acc.income += t.amount;
-        else acc.expenses += Math.abs(t.amount);
-        return acc;
-      },
-      { income: 0, expenses: 0 }
-    );
+    const s = computeMonthlySummary(displayed);
+    return { income: s.income, expenses: s.expenses };
   }, [displayed]);
+
+  const matchesDefaultPeriod = useMemo(
+    () => rangesEqual(dateRange, dateRangeFromIso(defaultRangeIso)),
+    [dateRange, defaultRangeIso.fromIso, defaultRangeIso.toIso]
+  );
 
   const hasActiveFilters =
     typeFilter !== "all" ||
     Boolean(accountFilter) ||
     Boolean(categoryFilter) ||
     Boolean(headerQuery.trim()) ||
-    Boolean(dateRange);
+    !matchesDefaultPeriod;
 
   function resetFilters() {
     setTypeFilter("all");
     setAccountFilter("");
     setCategoryFilter("");
     setHeaderQuery("");
-    setDateRange(null);
+    setDateRange(dateRangeFromIso(defaultRangeIso));
   }
 
   // ---------------------------------------------------------------------------

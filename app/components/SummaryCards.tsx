@@ -4,10 +4,12 @@ import {
   percentDelta,
   type MonthlySummary,
 } from "@/lib/mock-data";
+import type { PeriodLabelParts } from "@/lib/period-labels";
 
 type SummaryCardsProps = {
   summary: MonthlySummary;
-  monthLabel: string;
+  /** Periodo mostrato sulle card (titolo + opzionale sottotitolo con date). */
+  periodLabel: PeriodLabelParts;
   /**
    * Somma dei conti contrassegnati come salvadanaio/pocket. Se `> 0` viene
    * mostrata come sottotitolo informativo del Saldo Totale, così l'utente
@@ -25,7 +27,7 @@ type SummaryCardsProps = {
 
 export default function SummaryCards({
   summary,
-  monthLabel,
+  periodLabel,
   pocketBalance,
   previous,
 }: SummaryCardsProps) {
@@ -36,16 +38,12 @@ export default function SummaryCards({
 
   return (
     <section className="grid grid-cols-1 gap-5 lg:grid-cols-3">
-      <HeroBalanceCard
-        balance={summary.balance}
-        monthLabel={monthLabel}
-        pocketBalance={pocketBalance}
-      />
+      <HeroBalanceCard balance={summary.balance} pocketBalance={pocketBalance} />
 
       <StatCard
         label="Entrate"
         value={summary.income}
-        monthLabel={monthLabel}
+        periodLabel={periodLabel}
         tone="income"
         icon={<ArrowDownLeft className="h-4 w-4" strokeWidth={2.5} />}
         delta={incomeDelta}
@@ -56,7 +54,7 @@ export default function SummaryCards({
       <StatCard
         label="Uscite"
         value={summary.expenses}
-        monthLabel={monthLabel}
+        periodLabel={periodLabel}
         tone="expense"
         icon={<ArrowUpRight className="h-4 w-4" strokeWidth={2.5} />}
         delta={expensesDelta}
@@ -69,11 +67,9 @@ export default function SummaryCards({
 
 function HeroBalanceCard({
   balance,
-  monthLabel,
   pocketBalance,
 }: {
   balance: number;
-  monthLabel: string;
   pocketBalance?: number;
 }) {
   const showPocket =
@@ -90,7 +86,9 @@ function HeroBalanceCard({
             <p className="text-[11px] uppercase tracking-wider text-white/60">
               Saldo totale
             </p>
-            <p className="text-[12px] text-white/80">{monthLabel}</p>
+            <p className="text-[12px] text-white/80">
+              Liquidità sui conti · esclusi salvadanai
+            </p>
           </div>
         </div>
         <span className="text-[11px] font-medium tracking-wider text-white/60">
@@ -120,7 +118,7 @@ function HeroBalanceCard({
 function StatCard({
   label,
   value,
-  monthLabel,
+  periodLabel,
   tone,
   icon,
   delta,
@@ -128,7 +126,7 @@ function StatCard({
 }: {
   label: string;
   value: number;
-  monthLabel: string;
+  periodLabel: PeriodLabelParts;
   tone: "income" | "expense";
   icon: React.ReactNode;
   /**
@@ -180,9 +178,14 @@ function StatCard({
             <p className="text-[13px] font-medium text-[color:var(--color-muted-foreground)]">
               {label}
             </p>
-            <p className="text-[11px] text-[color:var(--color-muted-foreground)]/80">
-              {monthLabel}
+            <p className="text-[11px] font-medium text-[color:var(--color-muted-foreground)]">
+              {periodLabel.primary}
             </p>
+            {periodLabel.secondary ? (
+              <p className="text-[10.5px] text-[color:var(--color-muted-foreground)]/75">
+                {periodLabel.secondary}
+              </p>
+            ) : null}
           </div>
         </div>
         <span
