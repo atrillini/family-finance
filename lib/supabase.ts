@@ -216,6 +216,24 @@ export type TransactionRow = {
  * come "memoria" così anche per transazioni non coperte da regola esatta
  * l'IA impara il gusto dell'utente.
  */
+/**
+ * Esempio few-shot salvato quando l'utente corregge manualmente categoria/tag
+ * (e campi di etichetta collegati) su una transazione.
+ */
+export type CategorizationExampleRow = {
+  id: string;
+  user_id: string;
+  /** Hash deduplica descrizione+merchant normalizzati (vedi migrazione). */
+  dedupe_key: string | null;
+  description: string;
+  merchant: string | null;
+  category: TransactionCategory;
+  tags: string[];
+  is_subscription: boolean;
+  is_transfer: boolean;
+  created_at: string;
+};
+
 export type CategorizationRuleRow = {
   id: string;
   user_id: string;
@@ -296,6 +314,31 @@ export type Database = {
           bank_pending?: boolean;
         };
         Update: Partial<TransactionRow>;
+        Relationships: [];
+      };
+      categorization_examples: {
+        Row: CategorizationExampleRow;
+        Insert: Omit<
+          CategorizationExampleRow,
+          "id" | "created_at" | "tags"
+        > & {
+          id?: string;
+          created_at?: string;
+          tags?: string[];
+          dedupe_key: string;
+        };
+        Update: Partial<
+          Pick<
+            CategorizationExampleRow,
+            | "description"
+            | "merchant"
+            | "category"
+            | "tags"
+            | "is_subscription"
+            | "is_transfer"
+            | "dedupe_key"
+          >
+        >;
         Relationships: [];
       };
       categorization_rules: {

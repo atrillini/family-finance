@@ -155,7 +155,26 @@ const EMPTY_ANALYSIS: TransactionAnalysis = {
  */
 export type AnalyzeTransactionContext = {
   userRulesBlock?: string;
+  /** Esempi recenti delle correzioni manuali (`formatExamplesForPrompt`). */
+  userExamplesBlock?: string;
 };
+
+/**
+ * Unisce i blocchi testuali già formattati (regole utente + esempi few-shot).
+ * Usato da sync, `/api/categorize` e ricategorizzazione.
+ */
+export function buildAnalyzeTransactionContext(
+  rulesFormatted: string,
+  examplesFormatted: string
+): AnalyzeTransactionContext | undefined {
+  const rules = rulesFormatted.trim();
+  const examples = examplesFormatted.trim();
+  if (!rules && !examples) return undefined;
+  return {
+    ...(rules ? { userRulesBlock: rules } : {}),
+    ...(examples ? { userExamplesBlock: examples } : {}),
+  };
+}
 
 /** Metriche token/costo singola chiamata categorizzazione (Gemini). */
 export type GeminiUsageMetrics = {
@@ -209,6 +228,7 @@ export async function analyzeTransactionWithMetrics(
   const model = getAnalysisModel();
 
   const rulesSection = context?.userRulesBlock?.trim();
+  const examplesSection = context?.userExamplesBlock?.trim();
 
   const prompt = [
     "Sei un assistente finanziario che analizza transazioni bancarie di una famiglia italiana.",
@@ -227,6 +247,13 @@ export async function analyzeTransactionWithMetrics(
           "",
           "Memoria personale dell'utente (RISPETTA questi schemi quando la descrizione sembra rientrarvi, anche approssimativamente):",
           rulesSection,
+        ].join("\n")
+      : "",
+    examplesSection
+      ? [
+          "",
+          "Esempi delle sue correzioni recenti (usa lo stesso stile di categorie/tag quando la transazione è analoga, anche senza match letterale):",
+          examplesSection,
         ].join("\n")
       : "",
     "",

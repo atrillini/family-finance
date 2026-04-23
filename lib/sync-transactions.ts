@@ -17,7 +17,9 @@ import {
 import {
   analyzeTransaction,
   analyzeTransactionWithMetrics,
+  buildAnalyzeTransactionContext,
   EMPTY_GEMINI_USAGE,
+  type AnalyzeTransactionContext,
   type GeminiUsageMetrics,
   type TransactionAnalysis,
 } from "./gemini";
@@ -28,6 +30,10 @@ import {
   formatRulesForPrompt,
   loadCategorizationRules,
 } from "./categorization-rules";
+import {
+  formatExamplesForPrompt,
+  loadCategorizationExamples,
+} from "./categorization-examples";
 import { getSyncFloorDate, isAtOrAfterFloor } from "./sync-floor";
 
 type TransactionInsert =
@@ -181,6 +187,13 @@ export async function syncTransactions(
   // matcha esattamente l'IA "vede" gli schemi che l'utente vuole rispettare.
   const rules = await loadCategorizationRules(supabase, userId);
   const rulesBlock = formatRulesForPrompt(rules);
+  const exampleRows = await loadCategorizationExamples(supabase, userId);
+  const examplesBlock = formatExamplesForPrompt(exampleRows);
+
+  const aiPromptContext = buildAnalyzeTransactionContext(
+    rulesBlock,
+    examplesBlock
+  );
 
   // Statistiche per capire quanto ha pesato Gemini su questo batch.
   let aiOk = 0;
@@ -231,7 +244,7 @@ export async function syncTransactions(
       });
       const { analysis, ok, usage } = await safeAnalyze(
         aiInput,
-        rulesBlock,
+        aiPromptContext,
         logCtx
       );
       geminiInputTotal += usage.inputTokens;
@@ -590,6 +603,12 @@ export async function refreshDescriptions(
     // Carichiamo regole + rules-block una volta sola.
     const userRules = await loadCategorizationRules(supabase, userId);
     const rulesBlock = formatRulesForPrompt(userRules);
+    const exampleRows = await loadCategorizationExamples(supabase, userId);
+    const examplesBlock = formatExamplesForPrompt(exampleRows);
+    const aiPromptContext = buildAnalyzeTransactionContext(
+      rulesBlock,
+      examplesBlock
+    );
 
     const toRecategorize = plans.filter(({ row }) => {
       const cat = (row.category ?? "").trim();
@@ -638,7 +657,7 @@ export async function refreshDescriptions(
         });
         const { analysis, ok } = await safeAnalyze(
           aiInput,
-          rulesBlock,
+          aiPromptContext,
           refreshLogCtx
         );
         if (!ok) return;
@@ -725,6 +744,13 @@ export async function recategorizeTransaction(
   // la categorizzazione: se sì evitiamo la chiamata AI, è più veloce e
   // soprattutto più "obbediente" a quello che l'utente ha già istruito.
   const rules = await loadCategorizationRules(supabase, userId);
+  const exampleRows = await loadCategorizationExamples(supabase, userId);
+  const examplesBlock = formatExamplesForPrompt(exampleRows);
+  const aiPromptContext = buildAnalyzeTransactionContext(
+    formatRulesForPrompt(rules),
+    examplesBlock
+  );
+
   const ruleMatch = applyRules(rules, tx.description, tx.merchant);
 
   const update: Database["public"]["Tables"]["transactions"]["Update"] = {};
@@ -745,9 +771,7 @@ export async function recategorizeTransaction(
     // diretta dell'utente: se Gemini sta ritornando 429 o la API key non è
     // valida preferiamo esporre il motivo invece di silenziare tutto con un
     // fallback "Altro".
-    const analysis = await analyzeTransaction(aiInput, {
-      userRulesBlock: formatRulesForPrompt(rules),
-    });
+    const analysis = await analyzeTransaction(aiInput, aiPromptContext);
     update.category = analysis.category;
     update.tags = analysis.tags;
     update.is_subscription = analysis.is_subscription;
@@ -1510,7 +1534,7 @@ function buildFallbackExternalId(
  */
 async function safeAnalyze(
   description: string,
-  userRulesBlock: string | undefined,
+  aiContext: AnalyzeTransactionContext | undefined,
   logCtx: {
     supabase: SupabaseClient<Database>;
     userId: string;
@@ -1543,9 +1567,7 @@ async function safeAnalyze(
   try {
     const { analysis, usage } = await analyzeTransactionWithMetrics(
       description,
-      {
-        userRulesBlock,
-      }
+      aiContext
     );
     if (!analysis.category || analysis.category === "Altro") {
       console.info(

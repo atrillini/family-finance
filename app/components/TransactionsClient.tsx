@@ -42,6 +42,17 @@ import {
   type DateRange,
 } from "@/lib/date-range";
 import { normalizeTagLabel } from "@/lib/tag-colors";
+import {
+  postCategorizationExample,
+  postCategorizationExamplesBulk,
+} from "@/lib/categorization-learning-client";
+import {
+  collectLearningExamplesAfterBulkPatch,
+  mergedLabelSnapshotAfterPatch,
+  transactionLabelsChanged,
+  transactionToLabelSnapshot,
+  type LearningExamplePayload,
+} from "@/lib/categorization-learning-utils";
 import { dateRangeFromIso } from "@/lib/default-month-range";
 import { fetchTransactionsBatched } from "@/lib/supabase-transactions-batched";
 
@@ -305,6 +316,7 @@ export default function TransactionsClient({
   // ---------------------------------------------------------------------------
   async function handleSave(id: string, patch: EditTransactionPatch) {
     const prev = transactions;
+    const before = prev.find((t) => t.id === id);
     setTransactions((cur) =>
       cur.map((t) => (t.id === id ? { ...t, ...patch } : t))
     );
@@ -337,6 +349,35 @@ export default function TransactionsClient({
         throw new Error(
           "La modifica non è stata applicata. Probabile RLS su Supabase: aggiungi una policy UPDATE/SELECT su public.transactions."
         );
+      }
+
+      if (
+        before &&
+        transactionLabelsChanged(
+          {
+            category: before.category,
+            tags: before.tags ?? [],
+            merchant: before.merchant ?? null,
+            is_subscription: Boolean(before.is_subscription),
+            is_transfer: Boolean(before.is_transfer),
+          },
+          {
+            category: patch.category,
+            tags: patch.tags,
+            merchant: patch.merchant,
+            is_subscription: patch.is_subscription,
+            is_transfer: patch.is_transfer,
+          }
+        )
+      ) {
+        void postCategorizationExample({
+          description: patch.description,
+          merchant: patch.merchant,
+          category: patch.category,
+          tags: patch.tags,
+          is_subscription: patch.is_subscription,
+          is_transfer: patch.is_transfer,
+        });
       }
     } catch (err) {
       setTransactions(prev);
@@ -660,6 +701,15 @@ export default function TransactionsClient({
           );
         }
         toast.success(label, { description: `${count} transazioni aggiornate.` });
+
+        const bulkLearning = collectLearningExamplesAfterBulkPatch(
+          prev,
+          ids,
+          patch
+        );
+        if (bulkLearning.length > 0) {
+          void postCategorizationExamplesBulk(bulkLearning);
+        }
       } catch (err) {
         setTransactions(prev);
         toast.error(`${label} non riuscito`, {
@@ -755,6 +805,29 @@ export default function TransactionsClient({
         toast.success("Tag applicati", {
           description: `${add.join(", ")} · ${ids.length} movimenti.`,
         });
+
+        const bulkLearning: LearningExamplePayload[] = [];
+        for (const id of ids) {
+          const tx = prev.find((t) => t.id === id);
+          if (!tx) continue;
+          const mergedTags = updates.get(id)!;
+          const before = transactionToLabelSnapshot(tx);
+          const after = mergedLabelSnapshotAfterPatch(tx, {
+            tags: mergedTags,
+          });
+          if (!transactionLabelsChanged(before, after)) continue;
+          bulkLearning.push({
+            description: tx.description,
+            merchant: tx.merchant ?? null,
+            category: after.category,
+            tags: after.tags,
+            is_subscription: after.is_subscription,
+            is_transfer: after.is_transfer,
+          });
+        }
+        if (bulkLearning.length > 0) {
+          void postCategorizationExamplesBulk(bulkLearning);
+        }
       } catch (err) {
         setTransactions(prev);
         toast.error("Aggiornamento tag non riuscito", {

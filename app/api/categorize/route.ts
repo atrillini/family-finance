@@ -1,5 +1,16 @@
 import { NextResponse } from "next/server";
-import { analyzeTransaction } from "@/lib/gemini";
+import {
+  analyzeTransaction,
+  buildAnalyzeTransactionContext,
+} from "@/lib/gemini";
+import {
+  formatExamplesForPrompt,
+  loadCategorizationExamples,
+} from "@/lib/categorization-examples";
+import {
+  formatRulesForPrompt,
+  loadCategorizationRules,
+} from "@/lib/categorization-rules";
 import { isSupabaseConfigured } from "@/lib/supabase";
 import {
   getRouteSupabaseAndUser,
@@ -29,7 +40,8 @@ export async function POST(request: Request) {
     );
   }
 
-  if (!(await getRouteSupabaseAndUser())) return unauthorizedJson();
+  const auth = await getRouteSupabaseAndUser();
+  if (!auth) return unauthorizedJson();
 
   let body: { description?: unknown };
   try {
@@ -50,7 +62,14 @@ export async function POST(request: Request) {
   }
 
   try {
-    const analysis = await analyzeTransaction(description);
+    const rules = await loadCategorizationRules(auth.supabase, auth.user.id);
+    const examples = await loadCategorizationExamples(auth.supabase, auth.user.id);
+    const aiContext = buildAnalyzeTransactionContext(
+      formatRulesForPrompt(rules),
+      formatExamplesForPrompt(examples)
+    );
+
+    const analysis = await analyzeTransaction(description, aiContext);
     return NextResponse.json(analysis);
   } catch (err) {
     const message =
