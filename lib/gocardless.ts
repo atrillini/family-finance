@@ -513,6 +513,86 @@ export type GoCardlessTransaction = {
 };
 
 /**
+ * Su errori HTTP (es. 429), axios/nordigen-node espone ancora gli header sulla
+ * risposta: `error.response.headers`. GoCardless documenta header tipo
+ * `HTTP_X_RATELIMIT_*` e `HTTP_X_RATELIMIT_ACCOUNT_SUCCESS_*` (reset in secondi).
+ * Da unire in `system_logs.details` quando si logga un errore API banca.
+ */
+export function goCardlessHttpErrorDiagnostics(
+  err: unknown
+): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  const e = err as {
+    response?: {
+      status?: number;
+      headers?: unknown;
+      data?: unknown;
+    };
+  };
+
+  const status = e.response?.status;
+  if (typeof status === "number") out.httpStatus = status;
+
+  const rawData = e.response?.data;
+  if (rawData !== undefined && rawData !== null) {
+    if (typeof rawData === "object") {
+      out.responseSummary = rawData;
+    } else {
+      const s = String(rawData);
+      out.responseSnippet = s.length > 600 ? `${s.slice(0, 600)}…` : s;
+    }
+  }
+
+  const hdrs = e.response?.headers;
+  if (!hdrs || typeof hdrs !== "object") return out;
+
+  let flat: Record<string, unknown>;
+  if (
+    typeof (hdrs as { toJSON?: () => Record<string, unknown> }).toJSON ===
+    "function"
+  ) {
+    flat = (hdrs as { toJSON: () => Record<string, unknown> }).toJSON();
+  } else {
+    flat = hdrs as Record<string, unknown>;
+  }
+
+  const rate: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(flat)) {
+    const kl = k.toLowerCase();
+    if (
+      kl.includes("ratelimit") ||
+      kl.includes("rate-limit") ||
+      kl.startsWith("http-x-ratelimit")
+    ) {
+      rate[k] = v;
+    }
+  }
+  if (Object.keys(rate).length > 0) out.rateLimitHeaders = rate;
+
+  let resetSeconds: number | undefined;
+  for (const [k, v] of Object.entries(rate)) {
+    const kl = k.toLowerCase();
+    if (!kl.includes("reset")) continue;
+    const n = Number(v);
+    if (!Number.isFinite(n)) continue;
+    // Preferisci il reset “account success” se presente (documentazione GoCardless).
+    if (kl.includes("account_success") || kl.includes("account-success")) {
+      resetSeconds = n;
+      break;
+    }
+    if (resetSeconds === undefined) resetSeconds = n;
+  }
+  if (resetSeconds !== undefined) {
+    out.retryAfterSecondsSuggested = resetSeconds;
+    out.retryAfterApproximateUtc = new Date(
+      Date.now() + resetSeconds * 1000
+    ).toISOString();
+  }
+
+  return out;
+}
+
+/**
  * Helper per recuperare metadati (details, balances, transactions) di un account
  * GoCardless in una volta sola.
  */

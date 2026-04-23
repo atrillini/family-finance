@@ -4,6 +4,7 @@ import { createHash } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import {
   fetchAccountSnapshot,
+  goCardlessHttpErrorDiagnostics,
   type GoCardlessTransaction,
 } from "./gocardless";
 import {
@@ -113,6 +114,7 @@ export async function syncTransactions(
         accountId: account.id,
         gocardlessAccountId: account.gocardless_account_id,
         error: err instanceof Error ? err.message : String(err),
+        ...goCardlessHttpErrorDiagnostics(err),
       },
     });
     throw err;
@@ -464,6 +466,7 @@ export async function refreshDescriptions(
       details: {
         accountId: account.id,
         error: err instanceof Error ? err.message : String(err),
+        ...goCardlessHttpErrorDiagnostics(err),
       },
     });
     throw err;
@@ -939,6 +942,7 @@ export async function refreshSingleTransactionFromBank(
         dateFrom,
         dateTo,
         error: err instanceof Error ? err.message : String(err),
+        ...goCardlessHttpErrorDiagnostics(err),
       },
     });
     throw err;
