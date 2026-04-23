@@ -18,6 +18,8 @@ type RequisitionResponse = {
   accounts?: string[];
   reference?: string;
   link?: string;
+  /** Scadenza consenso accesso (API GoCardless v2). */
+  access_expires?: string;
 };
 
 type InstitutionResponse = {
@@ -155,6 +157,12 @@ export async function GET(request: Request) {
       }
     }
 
+    const consentExpiresAt =
+      typeof requisition.access_expires === "string" &&
+      requisition.access_expires.trim()
+        ? requisition.access_expires.trim()
+        : null;
+
     const results: Array<{ accountId: string; name: string }> = [];
     for (const gocardlessAccountId of requisition.accounts) {
       console.info(
@@ -170,6 +178,7 @@ export async function GET(request: Request) {
         institutionName,
         institutionLogo,
         userId: auth.user.id,
+        consentExpiresAt,
       });
       console.info("[/api/callback] account salvato:", {
         id: row.id,

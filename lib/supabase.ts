@@ -124,38 +124,11 @@ import type { TransactionCategory } from "./gemini";
  *   alter publication supabase_realtime add table public.accounts;
  *   alter publication supabase_realtime add table public.categorization_rules;
  *
- * --- Multi-tenant (Supabase Auth) -----------------------------------------
- * Collega ogni riga all'utente autenticato + abilita RLS:
- *
- *   alter table public.accounts add column if not exists user_id uuid
- *     references auth.users(id) on delete cascade;
- *   alter table public.transactions add column if not exists user_id uuid
- *     references auth.users(id) on delete cascade;
- *   alter table public.categorization_rules add column if not exists user_id uuid
- *     references auth.users(id) on delete cascade;
- *
- *   create index if not exists accounts_user_id_idx on public.accounts (user_id);
- *   create index if not exists transactions_user_id_idx on public.transactions (user_id);
- *   create index if not exists categorization_rules_user_id_idx
- *     on public.categorization_rules (user_id);
- *
- *   alter table public.accounts enable row level security;
- *   alter table public.transactions enable row level security;
- *   alter table public.categorization_rules enable row level security;
- *
- *   create policy "accounts_own" on public.accounts for all
- *     using (auth.uid() = user_id) with check (auth.uid() = user_id);
- *   create policy "transactions_own" on public.transactions for all
- *     using (auth.uid() = user_id) with check (auth.uid() = user_id);
- *   create policy "rules_own" on public.categorization_rules for all
- *     using (auth.uid() = user_id) with check (auth.uid() = user_id);
- *
- * Dopo la migrazione, esegui un backfill una tantum (es. tutto a un utente)
- * oppure svuota le tabelle di test.
+ * Notifiche in-app (campanella header) — vedi anche
+ * `supabase/migrations/20260422190000_notifications.sql`
  */
 export type AccountRow = {
   id: string;
-  /** Proprietario — obbligatorio quando RLS è attiva (migrazione Auth). */
   user_id: string | null;
   name: string;
   type: string;
@@ -166,6 +139,18 @@ export type AccountRow = {
   requisition_id: string | null;
   gocardless_account_id: string | null;
   last_sync_at: string | null;
+  /** Scadenza consenso PSD2 (GoCardless `access_expires` sulla requisition). */
+  consent_expires_at: string | null;
+  created_at: string;
+};
+
+export type NotificationRow = {
+  id: string;
+  user_id: string;
+  type: "info" | "warning" | "success";
+  title: string;
+  message: string;
+  is_read: boolean;
   created_at: string;
 };
 
@@ -201,7 +186,7 @@ export type TransactionRow = {
  */
 export type CategorizationRuleRow = {
   id: string;
-  user_id: string | null;
+  user_id: string;
   match_type: "description_contains" | "merchant_contains" | "description_regex";
   pattern: string;
   category: TransactionCategory;
@@ -221,6 +206,18 @@ export type Database = {
   };
   public: {
     Tables: {
+      notifications: {
+        Row: NotificationRow;
+        Insert: Omit<NotificationRow, "id" | "created_at" | "is_read"> & {
+          id?: string;
+          created_at?: string;
+          is_read?: boolean;
+        };
+        Update: Partial<
+          Pick<NotificationRow, "is_read" | "title" | "message" | "type">
+        >;
+        Relationships: [];
+      };
       transactions: {
         Row: TransactionRow;
         Insert: Omit<
@@ -270,7 +267,7 @@ export type Database = {
           is_subscription?: boolean;
           is_transfer?: boolean;
           match_type?: CategorizationRuleRow["match_type"];
-          user_id?: string | null;
+          user_id?: string;
         };
         Update: Partial<CategorizationRuleRow>;
         Relationships: [];
@@ -289,6 +286,7 @@ export type Database = {
           | "last_sync_at"
           | "logo_url"
           | "user_id"
+          | "consent_expires_at"
         > & {
           id?: string;
           created_at?: string;
@@ -300,6 +298,7 @@ export type Database = {
           gocardless_account_id?: string | null;
           last_sync_at?: string | null;
           user_id?: string | null;
+          consent_expires_at?: string | null;
         };
         Update: Partial<AccountRow>;
         Relationships: [];

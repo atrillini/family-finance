@@ -14,6 +14,7 @@ const MOCK_ACCOUNT_DEFAULTS = {
   requisition_id: null,
   gocardless_account_id: null,
   last_sync_at: null,
+  consent_expires_at: null,
 } as const;
 
 export const MOCK_ACCOUNTS: Account[] = [

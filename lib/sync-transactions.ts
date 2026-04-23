@@ -270,6 +270,22 @@ export async function syncTransactions(
 
   await supabase.from("accounts").update(update).eq("id", account.id);
 
+  if (toInsert.length > 0) {
+    try {
+      const { notifyAfterSync, countUncertainFromInserts } = await import(
+        "./post-sync-notifications"
+      );
+      await notifyAfterSync(supabase, userId, {
+        accountName: account.name,
+        aiFailed,
+        uncertainInserts: countUncertainFromInserts(categorized),
+        hadBatch: true,
+      });
+    } catch (e) {
+      console.warn("[sync] notifyAfterSync", e);
+    }
+  }
+
   return {
     accountId: account.id,
     accountName: account.name,
@@ -682,6 +698,8 @@ export async function upsertAccountFromRequisition(
     institutionName?: string | null;
     institutionLogo?: string | null;
     userId: string;
+    /** ISO da GoCardless `access_expires` sulla requisition */
+    consentExpiresAt?: string | null;
   }
 ): Promise<AccountRow> {
   const { data: existing, error: existingErr } = await supabase
@@ -723,6 +741,9 @@ export async function upsertAccountFromRequisition(
       institution_id: params.institutionId,
       gocardless_account_id: params.gocardlessAccountId,
     };
+    if (params.consentExpiresAt) {
+      update.consent_expires_at = params.consentExpiresAt;
+    }
     if (balance !== null) update.balance = balance;
     if (iban) update.iban = iban;
     if (params.institutionLogo && !existing.logo_url) {
@@ -761,6 +782,7 @@ export async function upsertAccountFromRequisition(
       requisition_id: params.requisitionId,
       gocardless_account_id: params.gocardlessAccountId,
       user_id: params.userId,
+      consent_expires_at: params.consentExpiresAt ?? null,
     })
     .select("*")
     .single();
