@@ -7,6 +7,13 @@ import {
   type GoCardlessTransaction,
 } from "./gocardless";
 import {
+  bankPayloadToJson,
+  DEFAULT_PARSER_VERSION,
+  hashGoCardlessTransaction,
+  parseBankPayload,
+  wrapBankPayload,
+} from "./bank-payload";
+import {
   analyzeTransaction,
   analyzeTransactionWithMetrics,
   EMPTY_GEMINI_USAGE,
@@ -207,6 +214,7 @@ export async function syncTransactions(
           external_id: t.external_id,
           date: t.date,
           user_id: userId,
+          ...bankMetadataForInsert(t),
         };
         return row;
       }
@@ -241,6 +249,7 @@ export async function syncTransactions(
         external_id: t.external_id,
         date: t.date,
         user_id: userId,
+        ...bankMetadataForInsert(t),
       };
       return row;
     }
@@ -517,6 +526,21 @@ export async function refreshDescriptions(
 
     const patch: Database["public"]["Tables"]["transactions"]["Update"] = {};
 
+    const meta = bankMetadataForInsert(n);
+    const needsMeta =
+      row.bank_payload == null ||
+      row.payload_hash !== meta.payload_hash ||
+      row.parser_version !== meta.parser_version ||
+      row.data_quality !== meta.data_quality ||
+      row.bank_pending !== meta.bank_pending;
+    if (needsMeta) {
+      patch.bank_payload = meta.bank_payload;
+      patch.parser_version = meta.parser_version;
+      patch.data_quality = meta.data_quality;
+      patch.payload_hash = meta.payload_hash;
+      patch.bank_pending = meta.bank_pending;
+    }
+
     // description: aggiorniamo se è cambiata davvero (case-sensitive trim).
     const newDesc = (n.description ?? "").trim();
     if (newDesc && newDesc !== (row.description ?? "").trim()) {
@@ -754,6 +778,230 @@ export async function recategorizeTransaction(
   return updated;
 }
 
+function utcIsoCalendarDay(dateIso: string): string {
+  const d = new Date(dateIso);
+  if (!Number.isNaN(d.getTime())) return d.toISOString().slice(0, 10);
+  const m = /^(\d{4}-\d{2}-\d{2})/.exec(dateIso);
+  return m ? m[1] : new Date().toISOString().slice(0, 10);
+}
+
+function addCalendarDaysUtc(isoDay: string, delta: number): string {
+  const [y, mo, da] = isoDay.split("-").map(Number);
+  const d = new Date(Date.UTC(y, (mo ?? 1) - 1, da ?? 1));
+  d.setUTCDate(d.getUTCDate() + delta);
+  return d.toISOString().slice(0, 10);
+}
+
+/**
+ * Riapplica `normalizeTransaction` usando solo `bank_payload` salvato:
+ * aggiorna descrizione / merchant secondo la stessa logica del refresh banca.
+ */
+export async function reparseTransactionFromBankPayload(
+  transactionId: string,
+  supabase: SupabaseClient<Database>,
+  userId: string
+): Promise<TransactionRow> {
+  const { data: tx, error: readErr } = await supabase
+    .from("transactions")
+    .select("*")
+    .eq("id", transactionId)
+    .eq("user_id", userId)
+    .single();
+
+  if (readErr || !tx) {
+    throw new Error(
+      `Transazione ${transactionId} non trovata: ${readErr?.message ?? "record assente"}`
+    );
+  }
+
+  const wrapper = parseBankPayload(tx.bank_payload);
+  if (!wrapper) {
+    throw new Error(
+      "Non ci sono dati grezzi salvati per questa transazione (bank_payload vuoto). Puoi provare «Riscarica dalla banca» se il conto è collegato."
+    );
+  }
+
+  const accountId = tx.account_id;
+  if (!accountId) {
+    throw new Error("La transazione non è associata a un conto.");
+  }
+
+  const normalized = normalizeTransaction(
+    wrapper.tx,
+    wrapper.pending,
+    accountId
+  );
+  if (!normalized) {
+    throw new Error("Impossibile normalizzare i dati salvati.");
+  }
+
+  const patch: Database["public"]["Tables"]["transactions"]["Update"] = {
+    ...bankMetadataForInsert(normalized),
+  };
+
+  const newDesc = (normalized.description ?? "").trim();
+  if (newDesc && newDesc !== (tx.description ?? "").trim()) {
+    patch.description = newDesc;
+  }
+
+  const oldMerchant = (tx.merchant ?? "").trim();
+  const looksLikeFallback =
+    !oldMerchant || oldMerchant === (tx.description ?? "").trim();
+  const newMerchant = normalized.merchantFallback?.trim() ?? "";
+  if (looksLikeFallback && newMerchant && newMerchant !== oldMerchant) {
+    patch.merchant = newMerchant;
+  }
+
+  const { data: updated, error: updErr } = await supabase
+    .from("transactions")
+    .update(patch)
+    .eq("id", transactionId)
+    .eq("user_id", userId)
+    .select("*")
+    .single();
+
+  if (updErr || !updated) {
+    throw new Error(`Aggiornamento fallito: ${updErr?.message ?? "record assente"}`);
+  }
+
+  return updated;
+}
+
+/**
+ * Richiama GoCardless per una finestra di giorni attorno alla data della transazione,
+ * abbina `external_id` e aggiorna payload + campi derivati come in sync.
+ */
+export async function refreshSingleTransactionFromBank(
+  transactionId: string,
+  supabase: SupabaseClient<Database>,
+  userId: string,
+  opts: { windowDays?: number } = {}
+): Promise<TransactionRow> {
+  const windowDays = opts.windowDays ?? 1;
+
+  const { data: tx, error: readErr } = await supabase
+    .from("transactions")
+    .select("*")
+    .eq("id", transactionId)
+    .eq("user_id", userId)
+    .single();
+
+  if (readErr || !tx) {
+    throw new Error(
+      `Transazione ${transactionId} non trovata: ${readErr?.message ?? "record assente"}`
+    );
+  }
+
+  const ext = (tx.external_id ?? "").trim();
+  if (!ext) {
+    throw new Error(
+      "Manca external_id: probabilmente è una transazione creata manualmente."
+    );
+  }
+
+  const accountId = tx.account_id;
+  if (!accountId) {
+    throw new Error("La transazione non è associata a un conto.");
+  }
+
+  const { data: account, error: accErr } = await supabase
+    .from("accounts")
+    .select("*")
+    .eq("id", accountId)
+    .eq("user_id", userId)
+    .single();
+
+  if (accErr || !account) {
+    throw new Error(`Conto non trovato per la transazione: ${accErr?.message}`);
+  }
+
+  if (!account.gocardless_account_id) {
+    throw new Error(`Il conto "${account.name}" non è collegato a GoCardless.`);
+  }
+
+  const center = utcIsoCalendarDay(tx.date);
+  const dateFrom = addCalendarDaysUtc(center, -windowDays);
+  const dateTo = addCalendarDaysUtc(center, windowDays);
+
+  let snapshot: Awaited<ReturnType<typeof fetchAccountSnapshot>>;
+  try {
+    snapshot = await fetchAccountSnapshot(account.gocardless_account_id, {
+      dateFrom,
+      dateTo,
+    });
+  } catch (err) {
+    await createSystemLog(supabase, userId, {
+      level: "error",
+      module: "Bank",
+      message: `Errore API GoCardless durante refresh singola transazione (${transactionId})`,
+      details: {
+        transactionId,
+        dateFrom,
+        dateTo,
+        error: err instanceof Error ? err.message : String(err),
+      },
+    });
+    throw err;
+  }
+
+  const bookedWithFlag = snapshot.booked.map((t) => ({ tx: t, pending: false }));
+  const pendingWithFlag = snapshot.pending.map((t) => ({
+    tx: t,
+    pending: true,
+  }));
+  const all = [...bookedWithFlag, ...pendingWithFlag];
+
+  const normalizedList = all
+    .map((item) => normalizeTransaction(item.tx, item.pending, account.id))
+    .filter((item): item is NormalizedTransaction => Boolean(item));
+
+  const byExt = new Map<string, NormalizedTransaction>();
+  for (const item of normalizedList) {
+    if (!byExt.has(item.external_id)) byExt.set(item.external_id, item);
+  }
+
+  const n = byExt.get(ext);
+  if (!n) {
+    throw new Error(
+      [
+        "La banca non ha restituito questo movimento nella finestra cercata.",
+        "Prova a sincronizzare l’account intero (storico più ampio) oppure aggiorna la descrizione a mano.",
+      ].join(" ")
+    );
+  }
+
+  const patch: Database["public"]["Tables"]["transactions"]["Update"] = {
+    ...bankMetadataForInsert(n),
+  };
+
+  const newDesc = (n.description ?? "").trim();
+  if (newDesc && newDesc !== (tx.description ?? "").trim()) {
+    patch.description = newDesc;
+  }
+
+  const oldMerchant = (tx.merchant ?? "").trim();
+  const looksLikeFallback =
+    !oldMerchant || oldMerchant === (tx.description ?? "").trim();
+  const newMerchant = n.merchantFallback?.trim() ?? "";
+  if (looksLikeFallback && newMerchant && newMerchant !== oldMerchant) {
+    patch.merchant = newMerchant;
+  }
+
+  const { data: updated, error: updErr } = await supabase
+    .from("transactions")
+    .update(patch)
+    .eq("id", transactionId)
+    .eq("user_id", userId)
+    .select("*")
+    .single();
+
+  if (updErr || !updated) {
+    throw new Error(updErr?.message ?? "Aggiornamento fallito.");
+  }
+
+  return updated;
+}
+
 /**
  * Esegue un `fn` su ogni elemento rispettando un limite di concorrenza.
  * Evita `Promise.all` su array lunghi quando `fn` chiama API con rate-limit
@@ -899,7 +1147,7 @@ export async function upsertAccountFromRequisition(
   return data;
 }
 
-type NormalizedTransaction = {
+export type NormalizedTransaction = {
   external_id: string;
   description: string;
   remittance: string;
@@ -913,7 +1161,35 @@ type NormalizedTransaction = {
    * di `analyzeTransaction` tramite `buildAiDescription`.
    */
   aiHints?: string[];
+  /** `weak` quando l’etichetta bancaria è generica e manca una controparte leggibile. */
+  data_quality: "ok" | "weak";
+  /** Transazione Berlin Group originale + flag pending. */
+  _source: { raw: GoCardlessTransaction; pending: boolean };
 };
+
+/**
+ * Campi persistiti su `transactions` per consentire re-parse locale e confronti con la banca.
+ */
+export function bankMetadataForInsert(
+  t: NormalizedTransaction
+): Pick<
+  TransactionInsert,
+  | "bank_payload"
+  | "parser_version"
+  | "data_quality"
+  | "payload_hash"
+  | "bank_pending"
+> {
+  return {
+    bank_payload: bankPayloadToJson(
+      wrapBankPayload(t._source.raw, t._source.pending)
+    ),
+    parser_version: DEFAULT_PARSER_VERSION,
+    data_quality: t.data_quality,
+    payload_hash: hashGoCardlessTransaction(t._source.raw),
+    bank_pending: t._source.pending,
+  };
+}
 
 /**
  * Etichette generiche che le banche italiane usano come "titolo tipo"
@@ -992,7 +1268,7 @@ function collectRemittanceSources(tx: GoCardlessTransaction): string[] {
   return sources;
 }
 
-function normalizeTransaction(
+export function normalizeTransaction(
   tx: GoCardlessTransaction,
   isPending: boolean,
   accountId: string
@@ -1112,6 +1388,9 @@ function normalizeTransaction(
     );
   }
 
+  const data_quality: "ok" | "weak" =
+    remittanceIsGeneric && !counterpartyName ? "weak" : "ok";
+
   return {
     external_id: externalId,
     description,
@@ -1120,6 +1399,8 @@ function normalizeTransaction(
     amount,
     date,
     aiHints: aiHints.length > 0 ? aiHints : undefined,
+    data_quality,
+    _source: { raw: tx, pending: isPending },
   };
 }
 

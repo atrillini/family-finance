@@ -5,7 +5,9 @@ import {
   AlertCircle,
   ArrowRightLeft,
   Loader2,
+  RefreshCw,
   Repeat,
+  RotateCcw,
   Sparkles,
   Trash2,
   Wand2,
@@ -36,6 +38,9 @@ type Props = {
   accounts?: Account[];
   /** Tag già usati nel progetto — autocompletamento nell’editor */
   tagSuggestions?: string[];
+  /** Se impostati (es. Supabase attivo), mostra azioni di riallineamento dati banca */
+  onReparseFromPayload?: (id: string) => Promise<void>;
+  onRefreshFromBank?: (id: string) => Promise<void>;
   onClose: () => void;
   onSave: (
     id: string,
@@ -54,6 +59,8 @@ export default function EditTransactionModal({
   transaction,
   accounts = [],
   tagSuggestions = [],
+  onReparseFromPayload,
+  onRefreshFromBank,
   onClose,
   onSave,
   onDelete,
@@ -72,6 +79,7 @@ export default function EditTransactionModal({
   const [isSubscription, setIsSubscription] = useState(false);
   const [isTransfer, setIsTransfer] = useState(false);
   const [busy, setBusy] = useState<"saving" | "deleting" | null>(null);
+  const [bankBusy, setBankBusy] = useState<"reparse" | "refresh" | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   // --- Stato per il pannello "Salva come regola" ---------------------------
@@ -141,7 +149,56 @@ export default function EditTransactionModal({
     };
   }, [open, onClose]);
 
-  const isBusy = busy !== null;
+  const isBusy = busy !== null || bankBusy !== null;
+
+  const hasBankPayload =
+    Boolean(transaction?.bank_payload) &&
+    typeof transaction?.bank_payload === "object";
+
+  const linkedAccount = transaction
+    ? accounts.find((a) => a.id === transaction.account_id)
+    : undefined;
+  const canRefreshFromBank =
+    Boolean(onRefreshFromBank) &&
+    Boolean((transaction?.external_id ?? "").trim()) &&
+    Boolean(linkedAccount?.gocardless_account_id);
+
+  const showReparse = Boolean(onReparseFromPayload) && hasBankPayload;
+  const showBankRefresh = canRefreshFromBank;
+
+  async function handleReparseFromSaved() {
+    if (!transaction || !onReparseFromPayload) return;
+    setBankBusy("reparse");
+    setError(null);
+    try {
+      await onReparseFromPayload(transaction.id);
+      toast.success("Descrizione aggiornata dai dati salvati.");
+    } catch (err) {
+      const msg =
+        err instanceof Error ? err.message : "Operazione non riuscita.";
+      setError(msg);
+      toast.error("Ricalcolo fallito", { description: msg });
+    } finally {
+      setBankBusy(null);
+    }
+  }
+
+  async function handleRefreshFromBank() {
+    if (!transaction || !onRefreshFromBank) return;
+    setBankBusy("refresh");
+    setError(null);
+    try {
+      await onRefreshFromBank(transaction.id);
+      toast.success("Dati aggiornati dalla banca.");
+    } catch (err) {
+      const msg =
+        err instanceof Error ? err.message : "Operazione non riuscita.";
+      setError(msg);
+      toast.error("Refresh dalla banca fallito", { description: msg });
+    } finally {
+      setBankBusy(null);
+    }
+  }
 
   const parsedAmount = useMemo(() => {
     const n = Number.parseFloat(amountStr.replace(",", "."));
@@ -487,6 +544,54 @@ export default function EditTransactionModal({
               dropdownPlacement="above"
             />
           </div>
+
+          {showReparse || showBankRefresh ? (
+            <div className="md:col-span-12 rounded-xl border border-[color:var(--color-border)] bg-[color:var(--color-surface-muted)]/40 p-3">
+              <p className="mb-2 text-[12px] font-medium text-[color:var(--color-muted-foreground)]">
+                Allineamento con la banca
+              </p>
+              <div className="flex flex-wrap gap-2">
+                {showReparse ? (
+                  <button
+                    type="button"
+                    onClick={handleReparseFromSaved}
+                    disabled={isBusy}
+                    title="Ricalcola descrizione e metadati dal JSON salvato (nessuna chiamata alla banca)"
+                    className="inline-flex h-9 items-center gap-2 rounded-lg border border-[color:var(--color-border)] bg-[color:var(--color-surface)] px-3 text-[12.5px] font-medium hover:bg-[color:var(--color-surface-muted)] disabled:opacity-50"
+                  >
+                    {bankBusy === "reparse" ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <RotateCcw className="h-3.5 w-3.5" />
+                    )}
+                    Ricalcola da dati salvati
+                  </button>
+                ) : null}
+                {showBankRefresh ? (
+                  <button
+                    type="button"
+                    onClick={handleRefreshFromBank}
+                    disabled={isBusy}
+                    title="Chiama GoCardless su una finestra stretta di date e aggiorna i campi derivati"
+                    className="inline-flex h-9 items-center gap-2 rounded-lg border border-[color:var(--color-border)] bg-[color:var(--color-surface)] px-3 text-[12.5px] font-medium hover:bg-[color:var(--color-surface-muted)] disabled:opacity-50"
+                  >
+                    {bankBusy === "refresh" ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <RefreshCw className="h-3.5 w-3.5" />
+                    )}
+                    Riscarica dalla banca
+                  </button>
+                ) : null}
+              </div>
+              {!hasBankPayload && canRefreshFromBank ? (
+                <p className="mt-2 text-[11px] text-[color:var(--color-muted-foreground)]">
+                  Per questa transazione non abbiamo ancora salvato il JSON grezzo:
+                  usa «Riscarica dalla banca» oppure sincronizza l&apos;account.
+                </p>
+              ) : null}
+            </div>
+          ) : null}
 
           <div className="md:col-span-12">
             {ruleOpen ? (

@@ -652,6 +652,50 @@ export default function DashboardClient({
     }
   }, []);
 
+  const handleReparseFromPayload = useCallback(async (id: string) => {
+    const resp = await fetch(
+      `/api/transactions/${encodeURIComponent(id)}/reparse`,
+      { method: "POST" }
+    );
+    const json = (await resp.json()) as {
+      error?: string;
+      transaction?: Transaction;
+    };
+    if (!resp.ok) throw new Error(json?.error ?? "Errore durante il re-parse.");
+    const updated = json.transaction;
+    if (updated) {
+      setTransactions((cur) =>
+        cur.map((t) => (t.id === id ? updated : t))
+      );
+      setEditing((prev) => (prev?.id === id ? updated : prev));
+    }
+  }, []);
+
+  const handleRefreshFromBank = useCallback(async (id: string) => {
+    const resp = await fetch(
+      `/api/transactions/${encodeURIComponent(id)}/refresh-bank`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ windowDays: 1 }),
+      }
+    );
+    const json = (await resp.json()) as {
+      error?: string;
+      transaction?: Transaction;
+    };
+    if (!resp.ok) {
+      throw new Error(json?.error ?? "Errore durante il refresh dalla banca.");
+    }
+    const updated = json.transaction;
+    if (updated) {
+      setTransactions((cur) =>
+        cur.map((t) => (t.id === id ? updated : t))
+      );
+      setEditing((prev) => (prev?.id === id ? updated : prev));
+    }
+  }, []);
+
   // ---------------------------------------------------------------------------
   // Bulk actions: ricategorizzazione / delete / toggle transfer / set category /
   // move account di più transazioni in una volta. Ogni operazione è ottimistica
@@ -1365,6 +1409,10 @@ export default function DashboardClient({
         onClose={() => setEditing(null)}
         onSave={handleSave}
         onDelete={handleDelete}
+        onReparseFromPayload={
+          configured ? handleReparseFromPayload : undefined
+        }
+        onRefreshFromBank={configured ? handleRefreshFromBank : undefined}
       />
 
       <EditAccountModal

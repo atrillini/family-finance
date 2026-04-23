@@ -2,6 +2,15 @@ import { createBrowserClient } from "@supabase/ssr";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import type { TransactionCategory } from "./gemini";
 
+/** Tipo JSON Postgrest (jsonb) allineato a Supabase. */
+export type Json =
+  | string
+  | number
+  | boolean
+  | null
+  | { [key: string]: Json | undefined }
+  | Json[];
+
 /**
  * Schema atteso per le tabelle `transactions` e `accounts` su Supabase.
  *
@@ -173,6 +182,16 @@ export type TransactionRow = {
   date: string;
   description: string;
   merchant: string | null;
+  /** Snapshot JSON della transazione GoCardless + meta (v. `lib/bank-payload.ts`). */
+  bank_payload: Json | null;
+  /** Versione della logica `normalizeTransaction` usata all’import. */
+  parser_version: string;
+  /** Qualità delle informazioni ricavate dalla banca (legacy senza payload = unknown). */
+  data_quality: "ok" | "weak" | "unknown";
+  /** Hash deterministico del payload grezzo per rilevare cambiamenti lato banca. */
+  payload_hash: string | null;
+  /** Ultimo stato noto booked vs pending dalla banca. */
+  bank_pending: boolean;
   category: TransactionCategory;
   amount: number;
   tags: string[];
@@ -255,6 +274,11 @@ export type Database = {
           | "account_id"
           | "external_id"
           | "user_id"
+          | "bank_payload"
+          | "parser_version"
+          | "data_quality"
+          | "payload_hash"
+          | "bank_pending"
         > & {
           id?: string;
           date?: string;
@@ -265,6 +289,11 @@ export type Database = {
           account_id?: string | null;
           external_id?: string | null;
           user_id?: string | null;
+          bank_payload?: Json | null;
+          parser_version?: string;
+          data_quality?: TransactionRow["data_quality"];
+          payload_hash?: string | null;
+          bank_pending?: boolean;
         };
         Update: Partial<TransactionRow>;
         Relationships: [];

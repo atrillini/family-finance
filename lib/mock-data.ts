@@ -60,6 +60,11 @@ const MOCK_TX_DEFAULTS = {
   external_id: null,
   is_transfer: false,
   user_id: null,
+  bank_payload: null,
+  parser_version: "1",
+  data_quality: "unknown" as const,
+  payload_hash: null,
+  bank_pending: false,
 } as const;
 
 export const MOCK_TRANSACTIONS: Transaction[] = [
