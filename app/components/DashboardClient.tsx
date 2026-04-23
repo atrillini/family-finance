@@ -1383,6 +1383,7 @@ export default function DashboardClient({
           selectable
           selectedIds={selectedIds}
           onSelectionChange={setSelectedIds}
+          tagSuggestions={distinctTagSuggestions}
         />
       )}
 

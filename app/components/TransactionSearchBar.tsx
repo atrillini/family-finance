@@ -4,11 +4,17 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Search, X } from "lucide-react";
 import { useHeaderSearch } from "@/lib/search-context";
 import { TRANSACTION_CATEGORIES } from "@/lib/gemini";
+import { normalizeTagLabel } from "@/lib/tag-colors";
 
 type Props = {
   className?: string;
   /** Se true, il campo occupa tutta la larghezza del contenitore (es. sotto al titolo su mobile) */
   fullWidth?: boolean;
+  /**
+   * Tag già usati nel dataset (stessi usati in modal / bulk) per
+   * autocompletamento coerente con `TagsInput`.
+   */
+  tagSuggestions?: string[];
 };
 
 /**
@@ -19,6 +25,7 @@ type Props = {
 export default function TransactionSearchBar({
   className = "",
   fullWidth = false,
+  tagSuggestions = [],
 }: Props) {
   const { query, setQuery } = useHeaderSearch();
   const [focused, setFocused] = useState(false);
@@ -36,7 +43,16 @@ export default function TransactionSearchBar({
     return () => document.removeEventListener("mousedown", onDocClick);
   }, [focused]);
 
-  const suggestions = useMemo(() => {
+  const suggestionPoolTags = useMemo(() => {
+    const set = new Set<string>();
+    for (const s of tagSuggestions) {
+      const n = normalizeTagLabel(s);
+      if (n) set.add(n);
+    }
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [tagSuggestions]);
+
+  const categorySuggestions = useMemo(() => {
     const q = query.trim().toLowerCase();
     if (!q) return [];
     return TRANSACTION_CATEGORIES.filter((c) =>
@@ -44,7 +60,17 @@ export default function TransactionSearchBar({
     ).slice(0, 6);
   }, [query]);
 
-  const showDropdown = focused && suggestions.length > 0;
+  const tagSuggestionsFiltered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return [];
+    return suggestionPoolTags.filter((t) =>
+      t.toLowerCase().startsWith(q)
+    ).slice(0, 10);
+  }, [query, suggestionPoolTags]);
+
+  const showDropdown =
+    focused &&
+    (categorySuggestions.length > 0 || tagSuggestionsFiltered.length > 0);
 
   return (
     <div
@@ -94,27 +120,66 @@ export default function TransactionSearchBar({
           role="listbox"
           className="absolute right-0 top-[calc(100%+6px)] z-20 w-full min-w-0 overflow-hidden rounded-xl border border-[color:var(--color-border)] bg-[color:var(--color-surface)] shadow-lg sm:min-w-[220px]"
         >
-          <div className="px-3 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-wider text-[color:var(--color-muted-foreground)]">
-            Categorie
-          </div>
-          {suggestions.map((cat) => (
-            <button
-              key={cat}
-              type="button"
-              role="option"
-              onMouseDown={(e) => {
-                e.preventDefault();
-                setQuery(cat);
-                setFocused(false);
-              }}
-              className="flex w-full items-center justify-between px-3 py-2 text-left text-[13px] transition-colors hover:bg-[color:var(--color-surface-muted)]"
-            >
-              <span>{cat}</span>
-              <span className="text-[10px] uppercase tracking-wider text-[color:var(--color-muted-foreground)]">
-                categoria
-              </span>
-            </button>
-          ))}
+          {categorySuggestions.length > 0 ? (
+            <>
+              <div className="px-3 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-wider text-[color:var(--color-muted-foreground)]">
+                Categorie
+              </div>
+              {categorySuggestions.map((cat) => (
+                <button
+                  key={`cat-${cat}`}
+                  type="button"
+                  role="option"
+                  onMouseDown={(e) => {
+                    e.preventDefault();
+                    setQuery(cat);
+                    setFocused(false);
+                  }}
+                  className="flex w-full items-center justify-between px-3 py-2 text-left text-[13px] transition-colors hover:bg-[color:var(--color-surface-muted)]"
+                >
+                  <span>{cat}</span>
+                  <span className="text-[10px] uppercase tracking-wider text-[color:var(--color-muted-foreground)]">
+                    categoria
+                  </span>
+                </button>
+              ))}
+            </>
+          ) : null}
+
+          {tagSuggestionsFiltered.length > 0 ? (
+            <>
+              <div
+                className={[
+                  "px-3 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-wider text-[color:var(--color-muted-foreground)]",
+                  categorySuggestions.length > 0 ? "border-t border-[color:var(--color-border)]/60 mt-1" : "",
+                ]
+                  .filter(Boolean)
+                  .join(" ")}
+              >
+                Tag
+              </div>
+              {tagSuggestionsFiltered.map((tag) => (
+                <button
+                  key={`tag-${tag}`}
+                  type="button"
+                  role="option"
+                  onMouseDown={(e) => {
+                    e.preventDefault();
+                    setQuery(tag);
+                    setFocused(false);
+                  }}
+                  className="flex w-full items-center justify-between px-3 py-2 text-left text-[13px] transition-colors hover:bg-[color:var(--color-surface-muted)]"
+                >
+                  <span className="font-medium text-[color:var(--color-foreground)]">
+                    #{tag}
+                  </span>
+                  <span className="text-[10px] uppercase tracking-wider text-[color:var(--color-muted-foreground)]">
+                    tag
+                  </span>
+                </button>
+              ))}
+            </>
+          ) : null}
         </div>
       ) : null}
     </div>

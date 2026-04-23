@@ -840,6 +840,7 @@ export default function TransactionsClient({
           selectable
           selectedIds={selectedIds}
           onSelectionChange={setSelectedIds}
+          tagSuggestions={distinctTagSuggestions}
         />
       )}
 

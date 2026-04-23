@@ -93,6 +93,8 @@ type TransactionsTableProps = {
   onSelectionChange?: (next: Set<string>) => void;
   /** Campo ricerca transazioni (contesto globale) nell’header della card. */
   showTransactionSearch?: boolean;
+  /** Tag distinti dal dataset per autocompletamento nella barra ricerca (come `BulkActionsBar`). */
+  tagSuggestions?: string[];
 };
 
 export default function TransactionsTable({
@@ -108,6 +110,7 @@ export default function TransactionsTable({
   selectedIds,
   onSelectionChange,
   showTransactionSearch = true,
+  tagSuggestions = [],
 }: TransactionsTableProps) {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState<number>(defaultPageSize);
@@ -180,7 +183,10 @@ export default function TransactionsTable({
           </p>
         </div>
         {showTransactionSearch ? (
-          <TransactionSearchBar className="w-full shrink-0 sm:w-auto sm:max-w-sm sm:pt-0.5" />
+          <TransactionSearchBar
+            className="w-full shrink-0 sm:w-auto sm:max-w-sm sm:pt-0.5"
+            tagSuggestions={tagSuggestions}
+          />
         ) : null}
       </div>
 
