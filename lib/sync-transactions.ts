@@ -6,7 +6,14 @@ import {
   fetchAccountSnapshot,
   type GoCardlessTransaction,
 } from "./gocardless";
-import { analyzeTransaction, type TransactionAnalysis } from "./gemini";
+import {
+  analyzeTransaction,
+  analyzeTransactionWithMetrics,
+  EMPTY_GEMINI_USAGE,
+  type GeminiUsageMetrics,
+  type TransactionAnalysis,
+} from "./gemini";
+import { createSystemLog } from "./system-log";
 import type { AccountRow, Database, TransactionRow } from "./supabase";
 import {
   applyRules,
@@ -85,9 +92,24 @@ export async function syncTransactions(
   // transazioni più vecchie perché tanto le scarteremmo subito dopo.
   // Risparmia banda, rate-limit GoCardless e soprattutto chiamate a Gemini.
   const floorDate = getSyncFloorDate();
-  const snapshot = await fetchAccountSnapshot(account.gocardless_account_id, {
-    dateFrom: floorDate,
-  });
+  let snapshot: Awaited<ReturnType<typeof fetchAccountSnapshot>>;
+  try {
+    snapshot = await fetchAccountSnapshot(account.gocardless_account_id, {
+      dateFrom: floorDate,
+    });
+  } catch (err) {
+    await createSystemLog(supabase, userId, {
+      level: "error",
+      module: "Bank",
+      message: `Errore API banca (GoCardless) durante lo sync di “${account.name}”`,
+      details: {
+        accountId: account.id,
+        gocardlessAccountId: account.gocardless_account_id,
+        error: err instanceof Error ? err.message : String(err),
+      },
+    });
+    throw err;
+  }
 
   const bookedWithFlag = snapshot.booked.map((t) => ({ tx: t, pending: false }));
   const pendingWithFlag = snapshot.pending.map((t) => ({
@@ -155,6 +177,15 @@ export async function syncTransactions(
   let aiOk = 0;
   let aiFailed = 0;
   let ruleHits = 0;
+  let geminiInputTotal = 0;
+  let geminiOutputTotal = 0;
+  let geminiCostTotal = 0;
+
+  const logCtx = {
+    supabase,
+    userId,
+    accountName: account.name,
+  };
 
   const categorized = await mapWithConcurrency(
     toInsert,
@@ -188,7 +219,14 @@ export async function syncTransactions(
         fallback: t.description,
         hints: t.aiHints,
       });
-      const { analysis, ok } = await safeAnalyze(aiInput, rulesBlock);
+      const { analysis, ok, usage } = await safeAnalyze(
+        aiInput,
+        rulesBlock,
+        logCtx
+      );
+      geminiInputTotal += usage.inputTokens;
+      geminiOutputTotal += usage.outputTokens;
+      geminiCostTotal += usage.estimatedCostUsd;
       if (ok) aiOk++;
       else aiFailed++;
       const row: TransactionInsert = {
@@ -269,6 +307,42 @@ export async function syncTransactions(
   }
 
   await supabase.from("accounts").update(update).eq("id", account.id);
+
+  await createSystemLog(supabase, userId, {
+    level:
+      insertedCount === 0 && aiFailed === 0 && toInsert.length === 0
+        ? "info"
+        : "success",
+    module: "System",
+    message: [
+      `Sync ${account.name}`,
+      `ricevuti ${normalized.length}`,
+      `nuovi ${insertedCount}`,
+      `Gemini OK ${aiOk}`,
+      `falliti ${aiFailed}`,
+      geminiCostTotal > 0
+        ? `· ~$${geminiCostTotal.toFixed(4)} IA`
+        : "",
+    ]
+      .filter(Boolean)
+      .join(" · "),
+    details: {
+      accountId: account.id,
+      fetchedFromBank: normalized.length,
+      duplicateSkipped: normalized.length - toInsert.length,
+      batchForAi: toInsert.length,
+      inserted: insertedCount,
+      ruleHits,
+      aiGeminiOk: aiOk,
+      aiGeminiFailed: aiFailed,
+      geminiInputTokens: geminiInputTotal,
+      geminiOutputTokens: geminiOutputTotal,
+      geminiCostUsdSession: geminiCostTotal,
+    },
+    tokens_input: geminiInputTotal,
+    tokens_output: geminiOutputTotal,
+    estimated_cost: geminiCostTotal,
+  });
 
   if (toInsert.length > 0) {
     try {
@@ -368,9 +442,23 @@ export async function refreshDescriptions(
 
   // 1) Ri-scarichiamo dalla banca, rispettando sempre il floor date.
   const floorDate = getSyncFloorDate();
-  const snapshot = await fetchAccountSnapshot(account.gocardless_account_id, {
-    dateFrom: floorDate,
-  });
+  let snapshot: Awaited<ReturnType<typeof fetchAccountSnapshot>>;
+  try {
+    snapshot = await fetchAccountSnapshot(account.gocardless_account_id, {
+      dateFrom: floorDate,
+    });
+  } catch (err) {
+    await createSystemLog(supabase, userId, {
+      level: "error",
+      module: "Bank",
+      message: `Errore API banca (GoCardless) durante refresh descrizioni su “${account.name}”`,
+      details: {
+        accountId: account.id,
+        error: err instanceof Error ? err.message : String(err),
+      },
+    });
+    throw err;
+  }
 
   const bookedWithFlag = snapshot.booked.map((t) => ({ tx: t, pending: false }));
   const pendingWithFlag = snapshot.pending.map((t) => ({
@@ -482,6 +570,12 @@ export async function refreshDescriptions(
       return cat === "Altro" && !hasTags;
     });
 
+    const refreshLogCtx = {
+      supabase,
+      userId,
+      accountName: account.name,
+    };
+
     await mapWithConcurrency(
       toRecategorize,
       AI_CONCURRENCY,
@@ -515,7 +609,11 @@ export async function refreshDescriptions(
           fallback: normalized.description,
           hints: normalized.aiHints,
         });
-        const { analysis, ok } = await safeAnalyze(aiInput, rulesBlock);
+        const { analysis, ok } = await safeAnalyze(
+          aiInput,
+          rulesBlock,
+          refreshLogCtx
+        );
         if (!ok) return;
 
         const patch: Database["public"]["Tables"]["transactions"]["Update"] = {
@@ -1127,8 +1225,17 @@ function buildFallbackExternalId(
  */
 async function safeAnalyze(
   description: string,
-  userRulesBlock?: string
-): Promise<{ analysis: TransactionAnalysis; ok: boolean }> {
+  userRulesBlock: string | undefined,
+  logCtx: {
+    supabase: SupabaseClient<Database>;
+    userId: string;
+    accountName: string;
+  }
+): Promise<{
+  analysis: TransactionAnalysis;
+  ok: boolean;
+  usage: GeminiUsageMetrics;
+}> {
   const fallback: TransactionAnalysis = {
     category: "Altro",
     merchant: "",
@@ -1141,31 +1248,53 @@ async function safeAnalyze(
     console.warn(
       "[sync/analyze] descrizione vuota: categorizzo come 'Altro' senza chiamare Gemini."
     );
-    return { analysis: fallback, ok: false };
+    return {
+      analysis: fallback,
+      ok: false,
+      usage: { ...EMPTY_GEMINI_USAGE },
+    };
   }
 
   try {
-    const analysis = await analyzeTransaction(description, {
-      userRulesBlock,
-    });
+    const { analysis, usage } = await analyzeTransactionWithMetrics(
+      description,
+      {
+        userRulesBlock,
+      }
+    );
     if (!analysis.category || analysis.category === "Altro") {
-      // Non è necessariamente un fallimento — "Altro" è una categoria
-      // valida — ma logghiamo per visibilità così se riceviamo 100% Altro
-      // in un batch sappiamo che serve rivedere il prompt / la remittance.
       console.info(
         "[sync/analyze] Gemini → 'Altro' per descrizione:",
         JSON.stringify(description.slice(0, 80))
       );
     }
-    return { analysis, ok: true };
+    return { analysis, ok: true, usage };
   } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
     console.error(
       "[sync/analyze] Gemini KO →",
-      err instanceof Error ? err.message : err,
+      msg,
       "— descrizione:",
       JSON.stringify(description.slice(0, 80))
     );
-    return { analysis: fallback, ok: false };
+    await createSystemLog(logCtx.supabase, logCtx.userId, {
+      level: "error",
+      module: "AI",
+      message: `Gemini: categorizzazione fallita (${logCtx.accountName})`,
+      details: {
+        accountName: logCtx.accountName,
+        descriptionPreview: description.slice(0, 280),
+        error: msg,
+      },
+      tokens_input: 0,
+      tokens_output: 0,
+      estimated_cost: 0,
+    });
+    return {
+      analysis: fallback,
+      ok: false,
+      usage: { ...EMPTY_GEMINI_USAGE },
+    };
   }
 }
 

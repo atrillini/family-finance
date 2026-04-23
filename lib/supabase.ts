@@ -154,6 +154,19 @@ export type NotificationRow = {
   created_at: string;
 };
 
+export type SystemLogRow = {
+  id: string;
+  user_id: string;
+  level: "info" | "error" | "success";
+  message: string;
+  module: "Bank" | "AI" | "System";
+  details: Record<string, unknown>;
+  tokens_input: number;
+  tokens_output: number;
+  estimated_cost: number;
+  created_at: string;
+};
+
 export type TransactionRow = {
   id: string;
   user_id: string | null;
@@ -215,6 +228,17 @@ export type Database = {
         };
         Update: Partial<
           Pick<NotificationRow, "is_read" | "title" | "message" | "type">
+        >;
+        Relationships: [];
+      };
+      system_logs: {
+        Row: SystemLogRow;
+        Insert: Omit<SystemLogRow, "id" | "created_at"> & {
+          id?: string;
+          created_at?: string;
+        };
+        Update: Partial<
+          Pick<SystemLogRow, "details" | "estimated_cost">
         >;
         Relationships: [];
       };
@@ -305,7 +329,12 @@ export type Database = {
       };
     };
     Views: Record<never, never>;
-    Functions: Record<never, never>;
+    Functions: {
+      sum_system_logs_cost: {
+        Args: { p_days?: number };
+        Returns: number;
+      };
+    };
   };
 };
 

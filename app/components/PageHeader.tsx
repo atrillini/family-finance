@@ -1,5 +1,6 @@
 "use client";
 
+import AdminLogBadge from "./AdminLogBadge";
 import NotificationsBell from "./NotificationsBell";
 
 type PageHeaderProps = {
@@ -28,6 +29,7 @@ export default function PageHeader({
       </div>
 
       <div className="flex items-center gap-2">
+        <AdminLogBadge />
         <NotificationsBell />
         <div
           className="flex h-9 w-9 items-center justify-center rounded-full bg-gradient-to-br from-[#5e5ce6] to-[#0a84ff] text-[12px] font-semibold text-white"

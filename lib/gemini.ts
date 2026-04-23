@@ -1,4 +1,5 @@
 import { GoogleGenerativeAI, SchemaType } from "@google/generative-ai";
+import { estimateGeminiCostUsd } from "./gemini-cost";
 
 /**
  * Categorie standard usate dall'app per classificare le transazioni.
@@ -156,12 +157,54 @@ export type AnalyzeTransactionContext = {
   userRulesBlock?: string;
 };
 
-export async function analyzeTransaction(
+/** Metriche token/costo singola chiamata categorizzazione (Gemini). */
+export type GeminiUsageMetrics = {
+  inputTokens: number;
+  outputTokens: number;
+  estimatedCostUsd: number;
+};
+
+export const EMPTY_GEMINI_USAGE: GeminiUsageMetrics = {
+  inputTokens: 0,
+  outputTokens: 0,
+  estimatedCostUsd: 0,
+};
+
+function usageFromGenerateContentResponse(result: {
+  response: {
+    text: () => string;
+    usageMetadata?: {
+      promptTokenCount?: number;
+      candidatesTokenCount?: number;
+      totalTokenCount?: number;
+    };
+  };
+}): GeminiUsageMetrics {
+  const u = result.response.usageMetadata;
+  const inputTokens = Math.max(0, Number(u?.promptTokenCount ?? 0));
+  let outputTokens = Math.max(0, Number(u?.candidatesTokenCount ?? 0));
+  if (!outputTokens && u?.totalTokenCount != null && inputTokens >= 0) {
+    const total = Math.max(0, Number(u.totalTokenCount));
+    outputTokens = Math.max(0, total - inputTokens);
+  }
+  return {
+    inputTokens,
+    outputTokens,
+    estimatedCostUsd: estimateGeminiCostUsd(inputTokens, outputTokens),
+  };
+}
+
+/**
+ * Come `analyzeTransaction`, ma espone anche token stimati e costo USD della chiamata.
+ */
+export async function analyzeTransactionWithMetrics(
   description: string,
   context?: AnalyzeTransactionContext
-): Promise<TransactionAnalysis> {
+): Promise<{ analysis: TransactionAnalysis; usage: GeminiUsageMetrics }> {
   const cleaned = description?.trim();
-  if (!cleaned) return { ...EMPTY_ANALYSIS };
+  if (!cleaned) {
+    return { analysis: { ...EMPTY_ANALYSIS }, usage: { ...EMPTY_GEMINI_USAGE } };
+  }
 
   const model = getAnalysisModel();
 
@@ -194,8 +237,17 @@ export async function analyzeTransaction(
 
   const result = await model.generateContent(prompt);
   const raw = result.response.text();
+  const usage = usageFromGenerateContentResponse(result);
 
-  return parseAnalysis(raw);
+  return { analysis: parseAnalysis(raw), usage };
+}
+
+export async function analyzeTransaction(
+  description: string,
+  context?: AnalyzeTransactionContext
+): Promise<TransactionAnalysis> {
+  const { analysis } = await analyzeTransactionWithMetrics(description, context);
+  return analysis;
 }
 
 function parseAnalysis(raw: string): TransactionAnalysis {
