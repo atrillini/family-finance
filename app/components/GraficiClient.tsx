@@ -41,10 +41,43 @@ import {
 import { getSupabaseClient, isSupabaseConfigured } from "@/lib/supabase";
 import { fetchTransactionsBatched } from "@/lib/supabase-transactions-batched";
 import { dateRangeFromIso } from "@/lib/default-month-range";
-import { buildPeriodSankeyData } from "@/lib/sankey-period";
+import {
+  buildPeriodSankeyGrouped,
+  collectTagsInRange,
+  type SankeyGroupMode,
+} from "@/lib/sankey-period";
+import { normalizeTagLabel } from "@/lib/tag-colors";
 
 /** Colori espliciti (hex) per contrasto su sfondo scuro/chiaro — Tremor Area. */
 const CHART_AREA_COLORS = ["#3b82f6", "#94a3b8"] as const;
+
+const LS_SANKEY_MODE = "ff.grafici.sankeyMode";
+const LS_SANKEY_PINS = "ff.grafici.sankeyPinnedTags";
+
+function readSankeyPrefs(): { mode: SankeyGroupMode; pinnedTags: string[] } {
+  if (typeof window === "undefined") {
+    return { mode: "category", pinnedTags: [] };
+  }
+  try {
+    const m = localStorage.getItem(LS_SANKEY_MODE);
+    const mode: SankeyGroupMode = m === "tags" ? "tags" : "category";
+    const raw = localStorage.getItem(LS_SANKEY_PINS);
+    const parsed = raw ? (JSON.parse(raw) as unknown) : [];
+    const pinnedTags = Array.isArray(parsed)
+      ? [
+          ...new Set(
+            parsed
+              .filter((x): x is string => typeof x === "string")
+              .map((x) => normalizeTagLabel(x))
+              .filter(Boolean)
+          ),
+        ].sort((a, b) => a.localeCompare(b, "it"))
+      : [];
+    return { mode, pinnedTags };
+  } catch {
+    return { mode: "category", pinnedTags: [] };
+  }
+}
 
 type Props = {
   defaultRangeIso: { fromIso: string; toIso: string };
@@ -67,6 +100,11 @@ export default function GraficiClient({
   const [dateRange, setDateRange] = useState<DateRange | null>(() =>
     dateRangeFromIso(defaultRangeIso)
   );
+
+  const [sankeyMode, setSankeyMode] = useState<SankeyGroupMode>("category");
+  const [sankeyPinnedTags, setSankeyPinnedTags] = useState<string[]>([]);
+  const [sankeyPrefsHydrated, setSankeyPrefsHydrated] = useState(false);
+  const [sankeyTagDraft, setSankeyTagDraft] = useState("");
 
   const rangeKey = dateRange
     ? `${dateRange.from.getTime()}|${(dateRange.to ?? dateRange.from).getTime()}`
@@ -179,10 +217,39 @@ export default function GraficiClient({
     );
   }, [transactions, referenceDayForWeek]);
 
+  const tagsInPeriodForSankey = useMemo(() => {
+    if (!dateRange) return [];
+    return collectTagsInRange(transactions, dateRange);
+  }, [transactions, dateRange]);
+
   const sankeyData = useMemo(() => {
     if (!dateRange) return null;
-    return buildPeriodSankeyData(transactions, dateRange);
-  }, [transactions, dateRange]);
+    return buildPeriodSankeyGrouped(transactions, dateRange, {
+      mode: sankeyMode,
+      pinnedTags: sankeyPinnedTags,
+    });
+  }, [transactions, dateRange, sankeyMode, sankeyPinnedTags]);
+
+  const toggleSankeyTag = useCallback((tag: string) => {
+    const n = normalizeTagLabel(tag);
+    if (!n) return;
+    setSankeyPinnedTags((prev) =>
+      prev.includes(n)
+        ? prev.filter((x) => x !== n)
+        : [...prev, n].sort((a, b) => a.localeCompare(b, "it"))
+    );
+  }, []);
+
+  const addSankeyTagFromDraft = useCallback(() => {
+    const n = normalizeTagLabel(sankeyTagDraft);
+    if (!n) return;
+    setSankeyPinnedTags((prev) =>
+      prev.includes(n)
+        ? prev
+        : [...prev, n].sort((a, b) => a.localeCompare(b, "it"))
+    );
+    setSankeyTagDraft("");
+  }, [sankeyTagDraft]);
 
   const insightPayload = useMemo((): ChartInsightPayload | null => {
     if (!dateRange || !previousRange) return null;
@@ -232,6 +299,23 @@ export default function GraficiClient({
     setInsightSource(null);
     setInsightLoading(false);
   }, [rangeKey]);
+
+  useEffect(() => {
+    const p = readSankeyPrefs();
+    setSankeyMode(p.mode);
+    setSankeyPinnedTags(p.pinnedTags);
+    setSankeyPrefsHydrated(true);
+  }, []);
+
+  useEffect(() => {
+    if (!sankeyPrefsHydrated || typeof window === "undefined") return;
+    try {
+      localStorage.setItem(LS_SANKEY_MODE, sankeyMode);
+      localStorage.setItem(LS_SANKEY_PINS, JSON.stringify(sankeyPinnedTags));
+    } catch {
+      /* ignore */
+    }
+  }, [sankeyPrefsHydrated, sankeyMode, sankeyPinnedTags]);
 
   const cumulativeTooltip = useCallback(
     (props: { active?: boolean; payload?: unknown[]; label?: unknown }) => (
@@ -411,17 +495,132 @@ export default function GraficiClient({
       <Card className="overflow-visible">
         <Title>Flusso entrate → uscite (Sankey)</Title>
         <Text className="mt-1">
-          Nel periodo selezionato: entrate per categoria (sinistra), nodo centrale
-          di riepilogo, uscite per categoria (destra). Giroconti esclusi. Se
-          entrate e uscite non coincidono, compaiono voci di bilanciamento
-          (&quot;Copertura oltre le entrate&quot; o &quot;Avanzo non speso&quot;).
-          Passa il mouse su collegamenti e rettangoli per gli importi.
+          {sankeyMode === "category"
+            ? "Nel periodo: entrate e uscite per categoria (sinistra / destra), nodo centrale di riepilogo."
+            : "Nel periodo: entrate e uscite ripartite sui tag che scegli sotto. Se una transazione ha più tag selezionati, l’importo è diviso in parti uguali tra essi. I movimenti senza nessuno di quei tag finiscono in “Fuori dai tag scelti”."}{" "}
+          Giroconti esclusi. Se entrate e uscite non coincidono, compaiono voci
+          di bilanciamento (&quot;Copertura oltre le entrate&quot; o &quot;Avanzo
+          non speso&quot;). Passa il mouse su collegamenti e rettangoli per gli
+          importi.
         </Text>
-        {loading && !sankeyData ? (
+
+        <div className="mt-4 flex flex-wrap items-center gap-2">
+          <span className="text-[12px] font-medium text-tremor-content-subtle">
+            Aggrega per
+          </span>
+          <div className="inline-flex rounded-full border border-[color:var(--color-border)] bg-[color:var(--color-surface-muted)]/40 p-0.5">
+            <button
+              type="button"
+              onClick={() => setSankeyMode("category")}
+              className={[
+                "rounded-full px-3 py-1 text-[12px] font-medium transition-colors",
+                sankeyMode === "category"
+                  ? "bg-[color:var(--color-surface)] text-[color:var(--color-foreground)] shadow-sm"
+                  : "text-tremor-content-subtle hover:text-[color:var(--color-foreground)]",
+              ].join(" ")}
+            >
+              Categorie
+            </button>
+            <button
+              type="button"
+              onClick={() => setSankeyMode("tags")}
+              className={[
+                "rounded-full px-3 py-1 text-[12px] font-medium transition-colors",
+                sankeyMode === "tags"
+                  ? "bg-[color:var(--color-surface)] text-[color:var(--color-foreground)] shadow-sm"
+                  : "text-tremor-content-subtle hover:text-[color:var(--color-foreground)]",
+              ].join(" ")}
+            >
+              Tag
+            </button>
+          </div>
+        </div>
+
+        {sankeyMode === "tags" ? (
+          <div className="mt-3 space-y-3 rounded-xl border border-[color:var(--color-border)] border-dashed bg-[color:var(--color-surface-muted)]/30 p-4">
+            <Text className="!text-[12px] text-tremor-content-subtle">
+              Clicca i tag presenti nel periodo per attivarli, oppure aggiungi un
+              nome a mano. La scelta resta salvata in questo browser.
+            </Text>
+            {tagsInPeriodForSankey.length ? (
+              <div className="flex flex-wrap gap-1.5">
+                {tagsInPeriodForSankey.map((tag) => {
+                  const on = sankeyPinnedTags.includes(tag);
+                  return (
+                    <button
+                      key={tag}
+                      type="button"
+                      onClick={() => toggleSankeyTag(tag)}
+                      className={[
+                        "rounded-full border px-2.5 py-1 text-[11px] font-medium transition-colors",
+                        on
+                          ? "border-[color:var(--color-accent)] bg-[color:var(--color-accent)]/15 text-[color:var(--color-accent)]"
+                          : "border-[color:var(--color-border)] bg-[color:var(--color-surface)] text-tremor-content-subtle hover:border-[color:var(--color-accent)]/50",
+                      ].join(" ")}
+                    >
+                      {tag}
+                    </button>
+                  );
+                })}
+              </div>
+            ) : (
+              <p className="text-[12px] text-tremor-content-subtle">
+                Nessun tag nelle transazioni di questo periodo: usa il campo qui
+                sotto per aggiungerne uno lo stesso.
+              </p>
+            )}
+            <div className="flex flex-wrap items-center gap-2">
+              <input
+                type="text"
+                value={sankeyTagDraft}
+                onChange={(e) => setSankeyTagDraft(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    addSankeyTagFromDraft();
+                  }
+                }}
+                placeholder="Aggiungi tag (Invio)"
+                className="h-9 min-w-[160px] flex-1 rounded-lg border border-[color:var(--color-border)] bg-[color:var(--color-surface)] px-2.5 text-[12px] outline-none focus:border-[color:var(--color-accent)]"
+              />
+              <button
+                type="button"
+                onClick={addSankeyTagFromDraft}
+                className="h-9 shrink-0 rounded-lg border border-[color:var(--color-border)] bg-[color:var(--color-surface)] px-3 text-[12px] font-medium text-[color:var(--color-foreground)] hover:border-[color:var(--color-accent)]"
+              >
+                Aggiungi
+              </button>
+              {sankeyPinnedTags.length ? (
+                <button
+                  type="button"
+                  onClick={() => setSankeyPinnedTags([])}
+                  className="h-9 shrink-0 text-[12px] font-medium text-tremor-content-subtle hover:text-[color:var(--color-expense)]"
+                >
+                  Svuota lista
+                </button>
+              ) : null}
+            </div>
+            {sankeyPinnedTags.length ? (
+              <p className="text-[11px] text-tremor-content-subtle">
+                Attivi ({sankeyPinnedTags.length}):{" "}
+                <span className="font-medium text-[color:var(--color-foreground)]">
+                  {sankeyPinnedTags.join(", ")}
+                </span>
+              </p>
+            ) : null}
+          </div>
+        ) : null}
+
+        {loading ? (
           <div className="mt-8 flex min-h-[280px] items-center justify-center gap-2 text-[13px] text-tremor-content-subtle">
             <Loader2 className="h-4 w-4 animate-spin" />
             Caricamento…
           </div>
+        ) : sankeyMode === "tags" && sankeyPinnedTags.length === 0 ? (
+          <p className="mt-6 text-[13px] text-tremor-content-subtle">
+            Seleziona almeno un tag (o aggiungine uno a mano) per costruire il
+            Sankey in vista Tag.
+          </p>
         ) : !sankeyData ? (
           <p className="mt-6 text-[13px] text-tremor-content-subtle">
             Nessun movimento nel periodo per costruire il Sankey.
