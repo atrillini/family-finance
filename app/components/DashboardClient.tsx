@@ -60,6 +60,7 @@ import {
   commercialistaCsvFilename,
 } from "@/lib/export-transactions-csv";
 import { downloadTextFile } from "@/lib/download-text-file";
+import { REFETCH_ACCOUNTS_EVENT } from "@/lib/cash-wallet";
 
 type Props = {
   /** Mese corrente (1° — oggi) serializzato dal server per idratazione coerente. */
@@ -284,6 +285,16 @@ export default function DashboardClient({
       cancelled = true;
       supabase.removeChannel(channel);
     };
+  }, [configured, refetchAccounts]);
+
+  useEffect(() => {
+    if (!configured) return;
+    const onRefetchAccounts = () => {
+      void refetchAccounts();
+    };
+    window.addEventListener(REFETCH_ACCOUNTS_EVENT, onRefetchAccounts);
+    return () =>
+      window.removeEventListener(REFETCH_ACCOUNTS_EVENT, onRefetchAccounts);
   }, [configured, refetchAccounts]);
 
   // Base: se non c'è Supabase, partiamo dai mock; altrimenti dallo state.

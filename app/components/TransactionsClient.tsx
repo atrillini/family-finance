@@ -61,6 +61,7 @@ import {
   commercialistaCsvFilename,
 } from "@/lib/export-transactions-csv";
 import { downloadTextFile } from "@/lib/download-text-file";
+import { REFETCH_ACCOUNTS_EVENT } from "@/lib/cash-wallet";
 
 type TypeFilter = "all" | "income" | "expense" | "subscription";
 
@@ -120,6 +121,17 @@ export default function TransactionsClient({
   const rangeKey = dateRange
     ? `${dateRange.from.getTime()}|${(dateRange.to ?? dateRange.from).getTime()}`
     : "";
+
+  const refetchAccountsList = useCallback(async () => {
+    if (!configured) return;
+    const supabase = getSupabaseClient();
+    const { data, error } = await supabase
+      .from("accounts")
+      .select("*")
+      .order("created_at", { ascending: true });
+    if (error) setError(error.message);
+    else setAccounts((data ?? []) as Account[]);
+  }, [configured]);
 
   // ---------------------------------------------------------------------------
   // Fetch + realtime: transazioni.
@@ -197,18 +209,8 @@ export default function TransactionsClient({
   useEffect(() => {
     if (!configured) return;
     const supabase = getSupabaseClient();
-    let cancelled = false;
 
-    async function load() {
-      const { data, error } = await supabase
-        .from("accounts")
-        .select("*")
-        .order("created_at", { ascending: true });
-      if (cancelled) return;
-      if (error) setError(error.message);
-      else setAccounts((data ?? []) as Account[]);
-    }
-    load();
+    void refetchAccountsList();
 
     const channel = supabase
       .channel("accounts-realtime-page")
@@ -237,10 +239,19 @@ export default function TransactionsClient({
       .subscribe();
 
     return () => {
-      cancelled = true;
       supabase.removeChannel(channel);
     };
-  }, [configured]);
+  }, [configured, refetchAccountsList]);
+
+  useEffect(() => {
+    if (!configured) return;
+    const onRefetchAccounts = () => {
+      void refetchAccountsList();
+    };
+    window.addEventListener(REFETCH_ACCOUNTS_EVENT, onRefetchAccounts);
+    return () =>
+      window.removeEventListener(REFETCH_ACCOUNTS_EVENT, onRefetchAccounts);
+  }, [configured, refetchAccountsList]);
 
   // ---------------------------------------------------------------------------
   // Applicazione filtri locali (sopra al risultato già caricato).
