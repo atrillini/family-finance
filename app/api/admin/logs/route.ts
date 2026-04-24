@@ -54,7 +54,27 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: rpcErr.message }, { status: 500 });
   }
 
-  const costLast30DaysUsd = Number(costRaw ?? 0);
+  const rpcUsd = Number(costRaw ?? 0);
+
+  // Fallback: se la RPC restituisce 0 ma la funzione non è aggiornata o i
+  // log hanno costi, sommiamo i `estimated_cost` degli ultimi 30 giorni.
+  const since = new Date(Date.now() - 30 * 86400000).toISOString();
+  const { data: costRows, error: sumErr } = await auth.supabase
+    .from("system_logs")
+    .select("estimated_cost")
+    .eq("user_id", auth.user.id)
+    .gte("created_at", since);
+
+  const sumFromRows =
+    !sumErr && Array.isArray(costRows)
+      ? costRows.reduce(
+          (acc, r) => acc + Number((r as { estimated_cost?: number }).estimated_cost ?? 0),
+          0
+        )
+      : 0;
+
+  const costLast30DaysUsd =
+    Number.isFinite(rpcUsd) && rpcUsd > 0 ? rpcUsd : sumFromRows;
 
   return NextResponse.json({
     logs: logs ?? [],

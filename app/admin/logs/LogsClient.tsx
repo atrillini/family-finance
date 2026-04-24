@@ -85,8 +85,9 @@ export default function LogsClient() {
       <div className="mx-auto max-w-xl px-4 py-16 text-center text-[14px] text-zinc-400">
         <p className="font-medium text-zinc-200">Accesso negato</p>
         <p className="mt-2">
-          Imposta <code className="font-mono text-[12px]">ADMIN_EMAIL</code>{" "}
-          nel server (.env) uguale alla tua email utente, poi riprova.
+          Imposta <code className="font-mono text-[12px]">ADMIN_EMAILS</code>{" "}
+          (o <code className="font-mono text-[12px]">ADMIN_EMAIL</code>) nel
+          server (.env) includendo la tua email utente, poi riprova.
         </p>
         <Link
           href="/"

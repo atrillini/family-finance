@@ -190,7 +190,7 @@ export const EMPTY_GEMINI_USAGE: GeminiUsageMetrics = {
 };
 
 function usageFromGenerateContentResponse(result: {
-  response: {
+  response?: {
     text: () => string;
     usageMetadata?: {
       promptTokenCount?: number;
@@ -198,12 +198,40 @@ function usageFromGenerateContentResponse(result: {
       totalTokenCount?: number;
     };
   };
+  usageMetadata?: {
+    promptTokenCount?: number;
+    candidatesTokenCount?: number;
+    totalTokenCount?: number;
+  };
 }): GeminiUsageMetrics {
-  const u = result.response.usageMetadata;
-  const inputTokens = Math.max(0, Number(u?.promptTokenCount ?? 0));
-  let outputTokens = Math.max(0, Number(u?.candidatesTokenCount ?? 0));
+  const u = result.response?.usageMetadata ?? result.usageMetadata;
+
+  const inputTokens = Math.max(
+    0,
+    Number(
+      u?.promptTokenCount ??
+        (u as { prompt_token_count?: number } | undefined)?.prompt_token_count ??
+        0
+    )
+  );
+  let outputTokens = Math.max(
+    0,
+    Number(
+      u?.candidatesTokenCount ??
+        (u as { candidates_token_count?: number } | undefined)
+          ?.candidates_token_count ??
+        0
+    )
+  );
   if (!outputTokens && u?.totalTokenCount != null && inputTokens >= 0) {
-    const total = Math.max(0, Number(u.totalTokenCount));
+    const total = Math.max(
+      0,
+      Number(
+        u.totalTokenCount ??
+          (u as { total_token_count?: number } | undefined)?.total_token_count ??
+          0
+      )
+    );
     outputTokens = Math.max(0, total - inputTokens);
   }
   return {

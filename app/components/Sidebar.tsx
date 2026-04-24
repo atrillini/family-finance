@@ -11,6 +11,8 @@ import {
   Sparkles,
   Wand2,
   LogOut,
+  Terminal,
+  Shield,
 } from "lucide-react";
 import { getSupabaseClient } from "@/lib/supabase";
 import type { User as SupabaseUser } from "@supabase/supabase-js";
@@ -27,14 +29,38 @@ export default function Sidebar() {
   const pathname = usePathname();
   const router = useRouter();
   const [user, setUser] = useState<SupabaseUser | null>(null);
+  const [isAdmin, setIsAdmin] = useState(false);
 
   useEffect(() => {
     const supabase = getSupabaseClient();
-    supabase.auth.getUser().then(({ data }) => setUser(data.user ?? null));
+
+    async function refreshUserAndAdmin() {
+      const { data } = await supabase.auth.getUser();
+      const nextUser = data.user ?? null;
+      setUser(nextUser);
+      if (!nextUser) {
+        setIsAdmin(false);
+        return;
+      }
+      try {
+        const res = await fetch("/api/admin/log-badge", {
+          credentials: "include",
+        });
+        const json = (await res.json().catch(() => null)) as {
+          admin?: boolean;
+        } | null;
+        setIsAdmin(Boolean(json?.admin));
+      } catch {
+        setIsAdmin(false);
+      }
+    }
+
+    void refreshUserAndAdmin();
+
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUser(session?.user ?? null);
+    } = supabase.auth.onAuthStateChange(() => {
+      void refreshUserAndAdmin();
     });
     return () => subscription.unsubscribe();
   }, []);
@@ -106,6 +132,47 @@ export default function Sidebar() {
               </li>
             );
           })}
+
+          {isAdmin ? (
+            <>
+              <li className="pt-4 pb-1">
+                <p className="px-3 text-[10px] font-semibold uppercase tracking-wider text-[color:var(--color-muted-foreground)]">
+                  Admin
+                </p>
+              </li>
+              <li>
+                <Link
+                  href="/admin/logs"
+                  className={[
+                    "group flex items-center gap-3 rounded-xl px-3 py-2.5 text-[14px] font-medium transition-colors",
+                    pathname.startsWith("/admin/logs")
+                      ? "bg-[color:var(--color-surface-muted)] text-[color:var(--color-foreground)]"
+                      : "text-[color:var(--color-muted-foreground)] hover:bg-[color:var(--color-surface-muted)]/60 hover:text-[color:var(--color-foreground)]",
+                  ].join(" ")}
+                >
+                  <Shield
+                    className={[
+                      "h-[18px] w-[18px] transition-colors",
+                      pathname.startsWith("/admin/logs")
+                        ? "text-[color:var(--color-accent)]"
+                        : "text-[color:var(--color-muted-foreground)] group-hover:text-[color:var(--color-foreground)]",
+                    ].join(" ")}
+                    strokeWidth={2}
+                  />
+                  <span className="flex min-w-0 flex-1 flex-col leading-tight">
+                    <span>System logs</span>
+                    <span className="truncate text-[11px] font-normal text-[color:var(--color-muted-foreground)]">
+                      Diagnostica · Gemini
+                    </span>
+                  </span>
+                  <Terminal
+                    className="h-4 w-4 shrink-0 text-[color:var(--color-muted-foreground)] opacity-70"
+                    strokeWidth={2}
+                  />
+                </Link>
+              </li>
+            </>
+          ) : null}
         </ul>
       </nav>
 
