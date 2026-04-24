@@ -19,6 +19,21 @@ export function greetingFirstName(user: User | null): string {
   return local ? capitalizeWord(local) : "tu";
 }
 
+/**
+ * URL avatar da OAuth / metadata Supabase (solo HTTPS).
+ */
+export function avatarUrlFromUser(user: User | null): string | null {
+  if (!user) return null;
+  const meta = user.user_metadata as Record<string, unknown> | undefined;
+  const raw =
+    (typeof meta?.avatar_url === "string" && meta.avatar_url) ||
+    (typeof meta?.picture === "string" && meta.picture) ||
+    "";
+  const u = raw.trim();
+  if (u.startsWith("https://")) return u;
+  return null;
+}
+
 export function initialsFromUser(user: User | null): string {
   if (!user) return "?";
   const meta = user.user_metadata as Record<string, unknown> | undefined;

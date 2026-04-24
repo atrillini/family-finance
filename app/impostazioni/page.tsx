@@ -2,10 +2,16 @@ import PageHeader from "../components/PageHeader";
 import { Sparkles, KeyRound, Bell } from "lucide-react";
 import ProfileNameSettings from "../components/ProfileNameSettings";
 import ProjectUsersList from "../components/ProjectUsersList";
-import { getSessionUser } from "@/lib/supabase/server-session";
+import { avatarUrlFromUser, initialsFromUser } from "@/lib/auth-display";
+import {
+  getLatestAccountLastSyncIso,
+  getSessionUser,
+} from "@/lib/supabase/server-session";
 
 export default async function ImpostazioniPage() {
   const user = await getSessionUser();
+  const lastSync = await getLatestAccountLastSyncIso();
+  const avatarInitials = initialsFromUser(user);
   const meta = user?.user_metadata as Record<string, unknown> | undefined;
   const initialFullName =
     typeof meta?.full_name === "string" ? meta.full_name : "";
@@ -15,6 +21,9 @@ export default async function ImpostazioniPage() {
       <PageHeader
         title="Impostazioni"
         subtitle="Gestisci il tuo profilo e le integrazioni di FamilyFinance AI."
+        avatarInitials={avatarInitials}
+        avatarUrl={avatarUrlFromUser(user)}
+        lastSyncAtIso={lastSync}
       />
 
       <ProfileNameSettings

@@ -5,7 +5,7 @@ import { cookies } from "next/headers";
 import type { User } from "@supabase/supabase-js";
 import type { Database } from "../supabase";
 
-export async function getSessionUser(): Promise<User | null> {
+async function createServerSupabaseForSession() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const anonKey =
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ??
@@ -14,7 +14,7 @@ export async function getSessionUser(): Promise<User | null> {
 
   const cookieStore = await cookies();
 
-  const supabase = createServerClient<Database>(url, anonKey, {
+  return createServerClient<Database>(url, anonKey, {
     cookies: {
       getAll() {
         return cookieStore.getAll();
@@ -30,9 +30,39 @@ export async function getSessionUser(): Promise<User | null> {
       },
     },
   });
+}
 
+export async function getSessionUser(): Promise<User | null> {
+  const supabase = await createServerSupabaseForSession();
+  if (!supabase) return null;
   const {
     data: { user },
   } = await supabase.auth.getUser();
   return user ?? null;
 }
+
+/** Timestamp ISO più recente tra i conti dell'utente collegato (sync banche). */
+export async function getLatestAccountLastSyncIso(): Promise<string | null> {
+  const supabase = await createServerSupabaseForSession();
+  if (!supabase) return null;
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return null;
+
+  const { data, error } = await supabase
+    .from("accounts")
+    .select("last_sync_at")
+    .eq("user_id", user.id);
+
+  if (error || !data?.length) return null;
+
+  let max: string | null = null;
+  for (const row of data) {
+    const t = row.last_sync_at;
+    if (!t) continue;
+    if (!max || new Date(t).getTime() > new Date(max).getTime()) max = t;
+  }
+  return max;
+}
+

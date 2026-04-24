@@ -1,5 +1,10 @@
 import PageHeader from "../components/PageHeader";
 import { formatCurrency } from "@/lib/mock-data";
+import { avatarUrlFromUser, initialsFromUser } from "@/lib/auth-display";
+import {
+  getLatestAccountLastSyncIso,
+  getSessionUser,
+} from "@/lib/supabase/server-session";
 
 type BudgetItem = {
   category: string;
@@ -16,12 +21,18 @@ const BUDGETS: BudgetItem[] = [
   { category: "Salute", spent: 65, limit: 200 },
 ];
 
-export default function BudgetPage() {
+export default async function BudgetPage() {
+  const user = await getSessionUser();
+  const lastSync = await getLatestAccountLastSyncIso();
+
   return (
     <div className="px-6 md:px-10 py-8 md:py-10 space-y-8 max-w-[1400px]">
       <PageHeader
         title="Budget"
         subtitle="Tieni sotto controllo le spese per categoria e rispetta i tuoi obiettivi."
+        avatarInitials={initialsFromUser(user)}
+        avatarUrl={avatarUrlFromUser(user)}
+        lastSyncAtIso={lastSync}
       />
 
       <section className="grid grid-cols-1 md:grid-cols-2 gap-5">

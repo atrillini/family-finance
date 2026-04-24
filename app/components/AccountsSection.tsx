@@ -17,6 +17,7 @@ import {
   isPocketAccount,
   type Account,
 } from "@/lib/mock-data";
+import { formatRelativeShort } from "@/lib/format-relative-it";
 
 type Props = {
   accounts: Account[];
@@ -237,7 +238,7 @@ function AccountCard({
           </p>
           <p className="mt-1 text-[11px] text-[color:var(--color-muted-foreground)]">
             {account.last_sync_at
-              ? `Agg. ${formatRelative(account.last_sync_at)}`
+              ? `Agg. ${formatRelativeShort(account.last_sync_at)}`
               : "Saldo attuale"}
           </p>
         </div>
@@ -321,24 +322,3 @@ function pickAccountIcon(account: Account): LucideIcon {
   return Landmark;
 }
 
-/**
- * Formatta un timestamp come "poco fa", "3 min fa", "2 h fa", altrimenti la
- * data breve. Utile per indicare quando è stato eseguito l'ultimo sync.
- */
-function formatRelative(iso: string): string {
-  const ts = new Date(iso).getTime();
-  if (!Number.isFinite(ts)) return "Saldo attuale";
-  const diffMs = Date.now() - ts;
-  const abs = Math.abs(diffMs);
-  const min = Math.round(abs / 60_000);
-  if (min < 1) return "ora";
-  if (min < 60) return `${min} min fa`;
-  const h = Math.round(min / 60);
-  if (h < 24) return `${h} h fa`;
-  const d = Math.round(h / 24);
-  if (d < 7) return `${d} g fa`;
-  return new Intl.DateTimeFormat("it-IT", {
-    day: "2-digit",
-    month: "short",
-  }).format(new Date(iso));
-}
