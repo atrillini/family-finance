@@ -14,6 +14,7 @@ type WeatherOk = {
 type WeatherErr = {
   ok: false;
   reason?: string;
+  status?: number;
   message?: string;
 };
 
@@ -31,12 +32,7 @@ export default function HeaderWeather() {
         const res = await fetch("/api/weather", { cache: "no-store" });
         const json = (await res.json()) as WeatherOk | WeatherErr;
         if (cancelled) return;
-        if (
-          json &&
-          "ok" in json &&
-          json.ok &&
-          typeof (json as WeatherOk).tempC === "number"
-        ) {
+        if (json && typeof json === "object" && "ok" in json && json.ok === true) {
           setState({ status: "ok", data: json as WeatherOk });
         } else {
           setState({ status: "err", data: json as WeatherErr });
@@ -67,9 +63,14 @@ export default function HeaderWeather() {
       <div
         className="flex h-9 items-center gap-1 rounded-full border border-dashed border-[color:var(--color-border)] px-2 text-[color:var(--color-muted-foreground)]"
         title={
-          state.status === "err" && state.data.message
-            ? state.data.message
-            : "Meteo: configura OPENWEATHER_API_KEY"
+          [
+            state.data.reason === "upstream_error" && state.data.status
+              ? `HTTP ${state.data.status}`
+              : null,
+            state.data.message,
+          ]
+            .filter(Boolean)
+            .join(" — ") || "Meteo non disponibile"
         }
       >
         <CloudOff className="h-3.5 w-3.5 shrink-0" aria-hidden />

@@ -19,19 +19,62 @@ export function greetingFirstName(user: User | null): string {
   return local ? capitalizeWord(local) : "tu";
 }
 
+function pickAvatarRawFromMeta(meta: Record<string, unknown> | undefined): string {
+  if (!meta) return "";
+  const a =
+    (typeof meta.avatar_url === "string" && meta.avatar_url) ||
+    (typeof meta.picture === "string" && meta.picture) ||
+    (typeof meta.image === "string" && meta.image) ||
+    "";
+  return String(a).trim();
+}
+
+function pickAvatarRawFromIdentities(user: User): string {
+  for (const id of user.identities ?? []) {
+    const data = id.identity_data as Record<string, unknown> | undefined;
+    const fromId = pickAvatarRawFromMeta(data);
+    if (fromId) return fromId;
+  }
+  return "";
+}
+
 /**
- * URL avatar da OAuth / metadata Supabase (solo HTTPS).
+ * Normalizza URL avatar (OAuth / metadata / identities Supabase).
+ * Accetta solo HTTPS; per alcuni provider prova upgrade da HTTP.
+ */
+export function normalizeAvatarUrl(raw: string): string | null {
+  let u = raw.trim();
+  if (!u) return null;
+  if (u.startsWith("//")) u = `https:${u}`;
+  if (u.startsWith("http://")) {
+    try {
+      const host = new URL(u).hostname.toLowerCase();
+      const upgrade =
+        host.endsWith("googleusercontent.com") ||
+        host.endsWith("gravatar.com") ||
+        host.endsWith("githubusercontent.com") ||
+        host.endsWith("github.com") ||
+        host.endsWith("supabase.co") ||
+        host.endsWith("licdn.com");
+      if (upgrade) u = `https://${u.slice("http://".length)}`;
+    } catch {
+      /* ignore */
+    }
+  }
+  if (u.startsWith("https://")) return u;
+  return null;
+}
+
+/**
+ * URL avatar da OAuth / metadata / identities Supabase (preferisce HTTPS).
  */
 export function avatarUrlFromUser(user: User | null): string | null {
   if (!user) return null;
   const meta = user.user_metadata as Record<string, unknown> | undefined;
-  const raw =
-    (typeof meta?.avatar_url === "string" && meta.avatar_url) ||
-    (typeof meta?.picture === "string" && meta.picture) ||
-    "";
-  const u = raw.trim();
-  if (u.startsWith("https://")) return u;
-  return null;
+  const fromMeta = pickAvatarRawFromMeta(meta);
+  const fromIdentities = fromMeta ? "" : pickAvatarRawFromIdentities(user);
+  const raw = fromMeta || fromIdentities;
+  return normalizeAvatarUrl(raw);
 }
 
 export function initialsFromUser(user: User | null): string {

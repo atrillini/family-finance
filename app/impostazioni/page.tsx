@@ -1,6 +1,7 @@
 import PageHeader from "../components/PageHeader";
 import { Sparkles, KeyRound, Bell } from "lucide-react";
 import ProfileNameSettings from "../components/ProfileNameSettings";
+import ProfileAvatarSettings from "../components/ProfileAvatarSettings";
 import ProjectUsersList from "../components/ProjectUsersList";
 import { avatarUrlFromUser, initialsFromUser } from "@/lib/auth-display";
 import {
@@ -29,6 +30,12 @@ export default async function ImpostazioniPage() {
       <ProfileNameSettings
         initialFullName={initialFullName}
         email={user?.email ?? ""}
+      />
+
+      <ProfileAvatarSettings
+        userId={user?.id ?? null}
+        initialAvatarUrl={avatarUrlFromUser(user)}
+        initials={avatarInitials}
       />
 
       <ProjectUsersList />

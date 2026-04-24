@@ -7,18 +7,41 @@ export const runtime = "nodejs";
  *
  * Variabili d'ambiente (Vercel / .env.local):
  * - OPENWEATHER_API_KEY  (obbligatoria per dati reali)
- * - OPENWEATHER_LAT + OPENWEATHER_LON  (opzionali, es. 45.4642 e 9.1900 per Milano)
- *   oppure
+ * - OPENWEATHER_LAT + OPENWEATHER_LON  (opzionali)
  * - OPENWEATHER_CITY     (default "Milano,IT" se lat/lon assenti)
  *
- * Esempio .env.local:
- *   OPENWEATHER_API_KEY=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
- *   OPENWEATHER_CITY=Milano,IT
+ * Debug (solo `NODE_ENV=development`): GET /api/weather?diagnose=1
+ * restituisce lunghezza chiave e hint senza esporre la chiave intera.
  *
- * Chiave gratuita: https://openweathermap.org/api — registrazione → API keys.
+ * Nota: il fetch verso OpenWeather usa `cache: "no-store"` per evitare
+ * che Next memorizzi a lungo una risposta 401 dopo aver corretto la key.
  */
-export async function GET() {
-  const key = process.env.OPENWEATHER_API_KEY?.trim();
+function readOpenWeatherKey(): string {
+  const raw = process.env.OPENWEATHER_API_KEY ?? "";
+  return raw.replace(/^\uFEFF/, "").trim();
+}
+
+export async function GET(request: Request) {
+  const reqUrl = new URL(request.url);
+  if (
+    reqUrl.searchParams.get("diagnose") === "1" &&
+    process.env.NODE_ENV === "development"
+  ) {
+    const key = readOpenWeatherKey();
+    return NextResponse.json({
+      env: "development",
+      keyPresent: key.length > 0,
+      keyLength: key.length,
+      hasInnerNewlines: /[\r\n]/.test(key),
+      hasSurroundingQuotes:
+        (key.startsWith('"') && key.endsWith('"')) ||
+        (key.startsWith("'") && key.endsWith("'")),
+      hint:
+        "Riavvia `npm run dev` dopo aver modificato .env.local. Le chiavi nuove su openweathermap.org possono richiedere fino a ~2 ore. Il nome della variabile deve essere esattamente OPENWEATHER_API_KEY.",
+    });
+  }
+
+  const key = readOpenWeatherKey();
   if (!key) {
     return NextResponse.json(
       {
@@ -30,10 +53,11 @@ export async function GET() {
     );
   }
 
-  const lat = process.env.OPENWEATHER_LAT?.trim();
-  const lon = process.env.OPENWEATHER_LON?.trim();
+  const lat = process.env.OPENWEATHER_LAT?.replace(/^\uFEFF/, "").trim();
+  const lon = process.env.OPENWEATHER_LON?.replace(/^\uFEFF/, "").trim();
   const city =
-    process.env.OPENWEATHER_CITY?.trim() || "Milano,IT";
+    process.env.OPENWEATHER_CITY?.replace(/^\uFEFF/, "").trim() ||
+    "Milano,IT";
 
   const url =
     lat && lon
@@ -41,21 +65,30 @@ export async function GET() {
       : `https://api.openweathermap.org/data/2.5/weather?q=${encodeURIComponent(city)}&units=metric&lang=it&appid=${encodeURIComponent(key)}`;
 
   try {
-    const res = await fetch(url, { next: { revalidate: 600 } });
+    const res = await fetch(url, { cache: "no-store" });
+    const text = await res.text();
+
     if (!res.ok) {
-      const text = await res.text();
+      let message = text.slice(0, 240);
+      try {
+        const j = JSON.parse(text) as { message?: string; cod?: number };
+        if (typeof j.message === "string" && j.message.trim())
+          message = j.message.trim();
+      } catch {
+        /* testo non JSON */
+      }
       return NextResponse.json(
         {
           ok: false as const,
           reason: "upstream_error",
           status: res.status,
-          message: text.slice(0, 200),
+          message,
         },
         { status: 200 }
       );
     }
 
-    const json = (await res.json()) as {
+    const json = JSON.parse(text) as {
       name?: string;
       main?: { temp?: number; feels_like?: number };
       weather?: Array<{ description?: string; icon?: string }>;
