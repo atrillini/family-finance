@@ -35,13 +35,11 @@ function parsePayload(body: unknown): ChartInsightPayload | null {
     expenseDeltaPct = body.expenseDeltaPct;
   }
 
-  const rawTop = Array.isArray(body.topCategoriesCurrent)
-    ? body.topCategoriesCurrent
-    : [];
-  const topCategoriesCurrent = rawTop
+  const rawTop = Array.isArray(body.topTagsCurrent) ? body.topTagsCurrent : [];
+  const topTagsCurrent = rawTop
     .filter(isRecord)
     .map((r) => ({
-      category: typeof r.category === "string" ? r.category : "Altro",
+      tag: typeof r.tag === "string" ? r.tag : "(sconosciuto)",
       amount: Number(r.amount),
       sharePct: Number(r.sharePct),
     }))
@@ -72,7 +70,7 @@ function parsePayload(body: unknown): ChartInsightPayload | null {
     expenseCurrent,
     expensePrevious,
     expenseDeltaPct,
-    topCategoriesCurrent,
+    topTagsCurrent,
     ...(weeklyBurn ? { weeklyBurn } : {}),
   };
 }

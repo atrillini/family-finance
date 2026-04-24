@@ -22,10 +22,10 @@ export function fallbackInsightFromAggregates(p: ChartInsightPayload): string {
       `Uscite **${p.expenseCurrent.toFixed(2)} €** nel periodo **${p.periodCurrentLabel}**.`
     );
   }
-  const top = p.topCategoriesCurrent[0];
+  const top = p.topTagsCurrent[0];
   if (top && top.amount > 0) {
     parts.push(
-      ` Voce principale: **${top.category}** (~${top.sharePct.toFixed(0)}% delle uscite).`
+      ` Tag principale: **${top.tag}** (~${top.sharePct.toFixed(0)}% delle uscite).`
     );
   }
   if (p.weeklyBurn) {

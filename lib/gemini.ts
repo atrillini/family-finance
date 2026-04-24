@@ -704,8 +704,8 @@ function parseParsedQuery(raw: string): ParsedQuery | null {
 // Insight sui grafici (solo aggregati — niente elenco transazioni)
 // ---------------------------------------------------------------------------
 
-export type ChartInsightTopCategory = {
-  category: string;
+export type ChartInsightTopTag = {
+  tag: string;
   amount: number;
   sharePct: number;
 };
@@ -716,7 +716,8 @@ export type ChartInsightPayload = {
   expenseCurrent: number;
   expensePrevious: number;
   expenseDeltaPct: number | null;
-  topCategoriesCurrent: ChartInsightTopCategory[];
+  /** Uscite ripartite per tag (importo diviso tra i tag di ogni transazione). */
+  topTagsCurrent: ChartInsightTopTag[];
   weeklyBurn?: {
     weekLabel: string;
     spendCumulativeEnd: number;
@@ -725,17 +726,17 @@ export type ChartInsightPayload = {
 };
 
 /**
- * Breve commento in italiano su andamento uscite e categorie, usando solo
+ * Breve commento in italiano su andamento uscite e tag, usando solo
  * numeri aggregati (privacy / costo contenuti).
  */
 export async function generateChartInsightFromAggregates(
   payload: ChartInsightPayload
 ): Promise<string> {
-  const top = payload.topCategoriesCurrent
+  const top = payload.topTagsCurrent
     .slice(0, 8)
     .map(
       (r) =>
-        `- ${r.category}: €${r.amount.toFixed(2)} (${r.sharePct.toFixed(1)}% delle uscite)`
+        `- tag "${r.tag}": €${r.amount.toFixed(2)} (${r.sharePct.toFixed(1)}% delle uscite)`
     )
     .join("\n");
 
@@ -759,6 +760,7 @@ export async function generateChartInsightFromAggregates(
     "Ti vengono forniti SOLO totali e percentuali aggregate (nessun dettaglio di singole transazioni).",
     "",
     "Scrivi in italiano **al massimo 2 frasi** (o 1 frase + un elenco puntato molto breve di al più 3 punti).",
+    "Enfasi sui **tag** (es. famiglia, lavoro, vacanza): non usare categorie di bilancio generiche (es. Svago, Alimentari) salvo se indispensabile.",
     "Tono: chiaro, concreto, senza allarmismi. Non dare consigli di investimento né raccomandazioni fiscali.",
     "Non inventare cifre: usa solo quelle nel blocco dati.",
     "",
@@ -769,8 +771,8 @@ export async function generateChartInsightFromAggregates(
     `- Uscite totali periodo precedente: €${payload.expensePrevious.toFixed(2)}`,
     `- ${deltaLine}`,
     "",
-    "Uscite per categoria nel periodo corrente (top):",
-    top || "(nessuna uscita nel periodo)",
+    "Uscite ripartite per TAG nel periodo corrente (top) — privilegia i tag nei commenti, non le categorie generiche:",
+    top || "(nessuna uscita o nessun tag nel periodo)",
     weeklyBlock,
     "",
     "Rispondi in Markdown leggero (opzionale **grassetto** sui numeri principali).",

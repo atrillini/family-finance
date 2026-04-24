@@ -172,3 +172,42 @@ body {
 ::-webkit-scrollbar-track {
   background: transparent;
 }
+
+/* Pagina Grafici: Tremor Card come card-surface + serie più leggibili in dark */
+.grafici-charts .tremor-Card-root {
+  border-radius: 1.25rem;
+}
+
+@media (prefers-color-scheme: dark) {
+  .grafici-charts .recharts-cartesian-grid-horizontal line,
+  .grafici-charts .recharts-cartesian-grid-vertical line {
+    stroke: rgba(255, 255, 255, 0.1);
+  }
+
+  .grafici-charts .recharts-area .recharts-area-curve {
+    stroke-width: 2.5px;
+  }
+
+  .grafici-charts .recharts-line .recharts-line-curve {
+    stroke-width: 3px;
+  }
+
+  /* Area: gradienti più densi su sfondo nero */
+  .grafici-charts .recharts-area defs linearGradient stop:nth-child(1) {
+    stop-opacity: 0.58 !important;
+  }
+
+  .grafici-charts .recharts-area defs linearGradient stop:nth-child(2) {
+    stop-opacity: 0.14 !important;
+  }
+}
+
+@media (prefers-color-scheme: light) {
+  .grafici-charts .recharts-area defs linearGradient stop:nth-child(1) {
+    stop-opacity: 0.45 !important;
+  }
+
+  .grafici-charts .recharts-area defs linearGradient stop:nth-child(2) {
+    stop-opacity: 0.08 !important;
+  }
+}

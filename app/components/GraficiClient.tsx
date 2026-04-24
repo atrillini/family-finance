@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { endOfDay, startOfDay } from "date-fns";
 import ReactMarkdown from "react-markdown";
 import { AlertCircle, Loader2, Sparkles } from "lucide-react";
@@ -14,6 +14,9 @@ import {
   Title,
 } from "@tremor/react";
 import DateRangePicker from "./DateRangePicker";
+import GraficiChartTooltip, {
+  type GraficiChartTooltipProps,
+} from "./GraficiChartTooltip";
 import MonthNavigator from "./MonthNavigator";
 import {
   computeMonthlySummary,
@@ -32,7 +35,7 @@ import {
   buildCumulativeExpenseComparison,
   totalExpenseInRange,
 } from "@/lib/cumulative-expense-chart";
-import { aggregateExpenseByCategory } from "@/lib/chart-aggregates";
+import { aggregateExpenseByTag } from "@/lib/chart-aggregates";
 import { fallbackInsightFromAggregates } from "@/lib/chart-insight-fallback";
 import type { ChartInsightPayload } from "@/lib/gemini";
 import {
@@ -44,6 +47,10 @@ import {
 import { getSupabaseClient, isSupabaseConfigured } from "@/lib/supabase";
 import { fetchTransactionsBatched } from "@/lib/supabase-transactions-batched";
 import { dateRangeFromIso } from "@/lib/default-month-range";
+
+/** Colori espliciti (hex) per contrasto su sfondo scuro/chiaro — Tremor + Recharts. */
+const CHART_AREA_COLORS = ["#3b82f6", "#94a3b8"] as const;
+const CHART_LINE_COLORS = ["#60a5fa", "#fbbf24"] as const;
 
 type Props = {
   defaultRangeIso: { fromIso: string; toIso: string };
@@ -180,10 +187,10 @@ export default function GraficiClient({
 
   const insightPayload = useMemo((): ChartInsightPayload | null => {
     if (!dateRange || !previousRange) return null;
-    const top = aggregateExpenseByCategory(transactions, dateRange, {
-      maxCategories: 10,
+    const top = aggregateExpenseByTag(transactions, dateRange, {
+      maxTags: 12,
     }).map((r) => ({
-      category: r.category,
+      tag: r.tag,
       amount: r.amount,
       sharePct: r.sharePct,
     }));
@@ -202,7 +209,7 @@ export default function GraficiClient({
       expenseCurrent: expenseCur,
       expensePrevious: expensePrev,
       expenseDeltaPct: deltaPct,
-      topCategoriesCurrent: top,
+      topTagsCurrent: top,
       ...(weeklyBurn ? { weeklyBurn } : {}),
     };
   }, [
@@ -222,60 +229,71 @@ export default function GraficiClient({
   }, [insightPayload]);
 
   useEffect(() => {
-    if (!configured || !insightPayload) {
-      setInsightMarkdown(null);
-      setInsightSource(null);
-      setInsightLoading(false);
-      return;
-    }
-
-    if (loading) {
-      setInsightMarkdown(null);
-      setInsightSource(null);
-      setInsightLoading(false);
-      return;
-    }
-
-    const ac = new AbortController();
-    setInsightLoading(true);
     setInsightMarkdown(null);
     setInsightSource(null);
+    setInsightLoading(false);
+  }, [rangeKey]);
 
-    void (async () => {
-      try {
-        const resp = await fetch("/api/chart-insight", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(insightPayload),
-          signal: ac.signal,
-        });
-        const json = (await resp.json()) as {
-          insight?: string;
-          source?: "gemini" | "fallback";
-          error?: string;
-        };
-        if (ac.signal.aborted) return;
-        if (!resp.ok || typeof json.insight !== "string" || !json.insight) {
-          setInsightMarkdown(fallbackInsightFromAggregates(insightPayload));
-          setInsightSource("fallback");
-        } else {
-          setInsightMarkdown(json.insight);
-          setInsightSource(json.source === "gemini" ? "gemini" : "fallback");
-        }
-      } catch {
-        if (ac.signal.aborted) return;
+  const cumulativeTooltip = useCallback(
+    (props: { active?: boolean; payload?: unknown[]; label?: unknown }) => (
+      <GraficiChartTooltip
+        active={props.active}
+        payload={props.payload as GraficiChartTooltipProps["payload"]}
+        label={props.label}
+        variant="cumulative"
+      />
+    ),
+    []
+  );
+
+  const weeklyTooltip = useCallback(
+    (props: { active?: boolean; payload?: unknown[]; label?: unknown }) => (
+      <GraficiChartTooltip
+        active={props.active}
+        payload={props.payload as GraficiChartTooltipProps["payload"]}
+        label={props.label}
+        variant="weekly"
+      />
+    ),
+    []
+  );
+
+  const handleGenerateInsight = useCallback(async () => {
+    if (!insightPayload) return;
+    if (!configured) {
+      setInsightMarkdown(fallbackInsightFromAggregates(insightPayload));
+      setInsightSource("fallback");
+      return;
+    }
+    setInsightLoading(true);
+    setInsightSource(null);
+    try {
+      const resp = await fetch("/api/chart-insight", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(insightPayload),
+      });
+      const json = (await resp.json()) as {
+        insight?: string;
+        source?: "gemini" | "fallback";
+      };
+      if (!resp.ok || typeof json.insight !== "string" || !json.insight) {
         setInsightMarkdown(fallbackInsightFromAggregates(insightPayload));
         setInsightSource("fallback");
-      } finally {
-        if (!ac.signal.aborted) setInsightLoading(false);
+      } else {
+        setInsightMarkdown(json.insight);
+        setInsightSource(json.source === "gemini" ? "gemini" : "fallback");
       }
-    })();
-
-    return () => ac.abort();
-  }, [configured, insightPayload, loading]);
+    } catch {
+      setInsightMarkdown(fallbackInsightFromAggregates(insightPayload));
+      setInsightSource("fallback");
+    } finally {
+      setInsightLoading(false);
+    }
+  }, [configured, insightPayload]);
 
   return (
-    <div className="space-y-6">
+    <div className="grafici-charts space-y-6">
       {!configured ? (
         <div className="card-surface flex items-start gap-3 p-4 text-[13px]">
           <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-[color:var(--color-accent)]" />
@@ -358,8 +376,9 @@ export default function GraficiClient({
             data={chartData}
             index="giorno"
             categories={["corrente", "precedente"]}
-            colors={["blue", "slate"]}
+            colors={[...CHART_AREA_COLORS]}
             valueFormatter={(v) => formatCurrency(v)}
+            customTooltip={cumulativeTooltip}
             showLegend
             curveType="monotone"
             yAxisWidth={72}
@@ -403,8 +422,9 @@ export default function GraficiClient({
             data={weeklyChartData}
             index="giorno"
             categories={["corrente", "mediaPrecedenti"]}
-            colors={["blue", "amber"]}
+            colors={[...CHART_LINE_COLORS]}
             valueFormatter={(v) => formatCurrency(v)}
+            customTooltip={weeklyTooltip}
             showLegend
             curveType="monotone"
             yAxisWidth={72}
@@ -417,33 +437,53 @@ export default function GraficiClient({
           <div className="flex items-start gap-2">
             <Sparkles className="mt-0.5 h-4 w-4 shrink-0 text-[color:var(--color-accent)]" />
             <div className="min-w-0 flex-1">
-              <Title>Insight (solo aggregati)</Title>
-              <Text className="mt-1">
-                Sintesi automatica su totali e categorie del periodo selezionato
-                (nessun dettaglio di singole transazioni inviato al modello).
-                Non è consulenza finanziaria.
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                <div>
+                  <Title>Insight (solo aggregati)</Title>
+                  <Text className="mt-1">
+                    Sintesi su totali e ripartizione per{" "}
+                    <span className="font-medium">tag</span> del periodo (nessun
+                    movimento singolo inviato al modello). Non è consulenza
+                    finanziaria.
+                  </Text>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => void handleGenerateInsight()}
+                  disabled={insightLoading || loading}
+                  className="inline-flex shrink-0 items-center justify-center gap-2 rounded-full border border-[color:var(--color-border)] px-4 py-2 text-[12.5px] font-medium transition-colors hover:border-[color:var(--color-accent)] hover:bg-[color:var(--color-accent)]/10 hover:text-[color:var(--color-accent)] disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {insightLoading ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Sparkles className="h-4 w-4" />
+                  )}
+                  Genera insight
+                </button>
+              </div>
+              <Text className="mt-2 text-[11px] text-tremor-content-subtle">
+                L&apos;insight non parte da solo al cambio date: usa il pulsante
+                quando vuoi aggiornarlo.
               </Text>
-              {configured && insightLoading ? (
+              {insightLoading ? (
                 <div className="mt-4 flex items-center gap-2 text-[13px] text-tremor-content-subtle">
                   <Loader2 className="h-4 w-4 animate-spin" />
-                  Generazione insight…
+                  Generazione in corso…
+                </div>
+              ) : insightMarkdown ? (
+                <div className="mt-4 space-y-2 text-[13px] leading-relaxed text-[color:var(--color-foreground)] [&_strong]:font-semibold [&_p]:my-1 [&_ul]:my-1 [&_li]:ml-4">
+                  <ReactMarkdown>{insightMarkdown}</ReactMarkdown>
                 </div>
               ) : (
-                <div className="mt-4 space-y-2 text-[13px] leading-relaxed text-[color:var(--color-foreground)] [&_strong]:font-semibold [&_p]:my-1 [&_ul]:my-1 [&_li]:ml-4">
-                  <ReactMarkdown>
-                    {configured
-                      ? (insightMarkdown ?? "")
-                      : (localFallbackInsight ?? "")}
-                  </ReactMarkdown>
-                </div>
+                <p className="mt-4 text-[13px] text-tremor-content-subtle">
+                  {configured
+                    ? "Clicca «Genera insight» per una sintesi AI sui dati del periodo selezionato."
+                    : "Clicca «Genera insight» per la sintesi locale (demo, senza server)."}
+                </p>
               )}
               {!insightLoading && insightSource ? (
                 <Text className="mt-2 text-[11px] text-tremor-content-subtle">
                   Fonte: {insightSource === "gemini" ? "Gemini" : "regole locali"}
-                </Text>
-              ) : !configured && localFallbackInsight ? (
-                <Text className="mt-2 text-[11px] text-tremor-content-subtle">
-                  Modalità demo: insight senza chiamata server.
                 </Text>
               ) : null}
             </div>
