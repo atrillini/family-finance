@@ -1,3 +1,4 @@
+import { timingSafeEqual } from "node:crypto";
 import { NextResponse } from "next/server";
 
 export const runtime = "nodejs";
@@ -10,10 +11,14 @@ export const runtime = "nodejs";
  * - OPENWEATHER_LAT + OPENWEATHER_LON  (opzionali)
  * - OPENWEATHER_CITY     (default "Milano,IT" se lat/lon assenti)
  *
- * Debug (solo `NODE_ENV=development`): GET /api/weather?diagnose=1
- * restituisce lunghezza chiave e hint senza esporre la chiave intera.
+ * Debug locale: GET /api/weather?diagnose=1 (solo NODE_ENV=development).
  *
- * Nota: il fetch verso OpenWeather usa `cache: "no-store"` per evitare
+ * Debug su Vercel (senza esporre la chiave al pubblico): imposta
+ * `WEATHER_DIAGNOSE_SECRET` su Vercel (stringa lunga casuale), poi:
+ *   GET /api/weather?diagnose=1&secret=<WEATHER_DIAGNOSE_SECRET>
+ * Risponde con keyLength, presenza key, VERCEL_ENV, ecc.
+ *
+ * Il fetch verso OpenWeather usa `cache: "no-store"` per evitare
  * che Next memorizzi a lungo una risposta 401 dopo aver corretto la key.
  */
 function readOpenWeatherKey(): string {
@@ -21,24 +26,74 @@ function readOpenWeatherKey(): string {
   return raw.replace(/^\uFEFF/, "").trim();
 }
 
+function diagnosePayload() {
+  const key = readOpenWeatherKey();
+  return {
+    keyPresent: key.length > 0,
+    keyLength: key.length,
+    hasInnerNewlines: /[\r\n]/.test(key),
+    hasSurroundingQuotes:
+      (key.startsWith('"') && key.endsWith('"')) ||
+      (key.startsWith("'") && key.endsWith("'")),
+    vercel: Boolean(process.env.VERCEL),
+    vercelEnv: process.env.VERCEL_ENV ?? null,
+    nodeEnv: process.env.NODE_ENV ?? null,
+    openweatherCityConfigured: Boolean(
+      process.env.OPENWEATHER_CITY?.replace(/^\uFEFF/, "").trim()
+    ),
+    openweatherLatLonConfigured: Boolean(
+      process.env.OPENWEATHER_LAT?.trim() && process.env.OPENWEATHER_LON?.trim()
+    ),
+    hint:
+      "Vercel: la variabile deve essere abilitata per l'ambiente del deploy (Production vs Preview), nome esatto OPENWEATHER_API_KEY, poi Redeploy. In dashboard Vercel → Deployment → Functions → Logs puoi vedere errori runtime.",
+  };
+}
+
+function diagnoseSecretOk(requestUrl: URL): boolean {
+  const expected = process.env.WEATHER_DIAGNOSE_SECRET?.trim() ?? "";
+  const got = requestUrl.searchParams.get("secret") ?? "";
+  if (!expected || expected.length < 16) return false;
+  try {
+    const a = Buffer.from(expected, "utf8");
+    const b = Buffer.from(got, "utf8");
+    if (a.length !== b.length) return false;
+    return timingSafeEqual(a, b);
+  } catch {
+    return false;
+  }
+}
+
 export async function GET(request: Request) {
   const reqUrl = new URL(request.url);
-  if (
-    reqUrl.searchParams.get("diagnose") === "1" &&
-    process.env.NODE_ENV === "development"
-  ) {
-    const key = readOpenWeatherKey();
+  const wantsDiagnose = reqUrl.searchParams.get("diagnose") === "1";
+
+  if (wantsDiagnose && process.env.NODE_ENV === "development") {
+    const d = diagnosePayload();
     return NextResponse.json({
-      env: "development",
-      keyPresent: key.length > 0,
-      keyLength: key.length,
-      hasInnerNewlines: /[\r\n]/.test(key),
-      hasSurroundingQuotes:
-        (key.startsWith('"') && key.endsWith('"')) ||
-        (key.startsWith("'") && key.endsWith("'")),
+      mode: "diagnose",
+      ...d,
       hint:
-        "Riavvia `npm run dev` dopo aver modificato .env.local. Le chiavi nuove su openweathermap.org possono richiedere fino a ~2 ore. Il nome della variabile deve essere esattamente OPENWEATHER_API_KEY.",
+        d.hint +
+        " Locale: riavvia `npm run dev` dopo .env.local. Chiavi nuove OpenWeather possono richiedere fino a ~2 ore.",
     });
+  }
+
+  if (wantsDiagnose && diagnoseSecretOk(reqUrl)) {
+    return NextResponse.json({
+      mode: "diagnose",
+      ...diagnosePayload(),
+    });
+  }
+
+  if (wantsDiagnose) {
+    return NextResponse.json(
+      {
+        error: "diagnose_forbidden",
+        message:
+          "In produzione aggiungi WEATHER_DIAGNOSE_SECRET su Vercel e chiama ?diagnose=1&secret=<quel valore>. In locale basta ?diagnose=1.",
+      },
+      { status: 403 }
+    );
   }
 
   const key = readOpenWeatherKey();
@@ -48,6 +103,11 @@ export async function GET(request: Request) {
         ok: false as const,
         reason: "missing_api_key",
         message: "Imposta OPENWEATHER_API_KEY in .env.local o su Vercel.",
+        vercelEnv: process.env.VERCEL_ENV ?? undefined,
+        hint:
+          process.env.VERCEL
+            ? "Su Vercel: Settings → Environment Variables → OPENWEATHER_API_KEY deve essere selezionata per Production (o Preview se stai su un URL preview). Salva e fai Redeploy del progetto."
+            : undefined,
       },
       { status: 200 }
     );
@@ -77,12 +137,18 @@ export async function GET(request: Request) {
       } catch {
         /* testo non JSON */
       }
+      const vercelHint =
+        process.env.VERCEL && res.status === 401
+          ? "Se in locale funziona: su Vercel spesso la key non è nel deploy giusto (Production vs Preview), c’è uno spazio/carattere in più nella variabile, oppure stai usando un altro progetto Vercel. Usa ?diagnose=1&secret=… con WEATHER_DIAGNOSE_SECRET per controllare keyLength senza esporre la chiave."
+          : undefined;
       return NextResponse.json(
         {
           ok: false as const,
           reason: "upstream_error",
           status: res.status,
           message,
+          vercelEnv: process.env.VERCEL_ENV ?? undefined,
+          hint: vercelHint,
         },
         { status: 200 }
       );
