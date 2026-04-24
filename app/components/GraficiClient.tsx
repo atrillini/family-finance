@@ -4,20 +4,13 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { endOfDay, startOfDay } from "date-fns";
 import ReactMarkdown from "react-markdown";
 import { AlertCircle, Loader2, Sparkles } from "lucide-react";
-import {
-  AreaChart,
-  Card,
-  Grid,
-  LineChart,
-  Metric,
-  Text,
-  Title,
-} from "@tremor/react";
+import { AreaChart, Card, Grid, Metric, Text, Title } from "@tremor/react";
 import DateRangePicker from "./DateRangePicker";
 import GraficiChartTooltip, {
   type GraficiChartTooltipProps,
 } from "./GraficiChartTooltip";
 import MonthNavigator from "./MonthNavigator";
+import WeeklyBurnLineChart from "./WeeklyBurnLineChart";
 import {
   computeMonthlySummary,
   formatCurrency,
@@ -48,9 +41,8 @@ import { getSupabaseClient, isSupabaseConfigured } from "@/lib/supabase";
 import { fetchTransactionsBatched } from "@/lib/supabase-transactions-batched";
 import { dateRangeFromIso } from "@/lib/default-month-range";
 
-/** Colori espliciti (hex) per contrasto su sfondo scuro/chiaro — Tremor + Recharts. */
+/** Colori espliciti (hex) per contrasto su sfondo scuro/chiaro — Tremor Area. */
 const CHART_AREA_COLORS = ["#3b82f6", "#94a3b8"] as const;
-const CHART_LINE_COLORS = ["#60a5fa", "#fbbf24"] as const;
 
 type Props = {
   defaultRangeIso: { fromIso: string; toIso: string };
@@ -246,18 +238,6 @@ export default function GraficiClient({
     []
   );
 
-  const weeklyTooltip = useCallback(
-    (props: { active?: boolean; payload?: unknown[]; label?: unknown }) => (
-      <GraficiChartTooltip
-        active={props.active}
-        payload={props.payload as GraficiChartTooltipProps["payload"]}
-        label={props.label}
-        variant="weekly"
-      />
-    ),
-    []
-  );
-
   const handleGenerateInsight = useCallback(async () => {
     if (!insightPayload) return;
     if (!configured) {
@@ -417,18 +397,7 @@ export default function GraficiClient({
             Nessun dato per il confronto settimanale nel range caricato.
           </p>
         ) : (
-          <LineChart
-            className="mt-6 h-80"
-            data={weeklyChartData}
-            index="giorno"
-            categories={["corrente", "mediaPrecedenti"]}
-            colors={[...CHART_LINE_COLORS]}
-            valueFormatter={(v) => formatCurrency(v)}
-            customTooltip={weeklyTooltip}
-            showLegend
-            curveType="monotone"
-            yAxisWidth={72}
-          />
+          <WeeklyBurnLineChart data={weeklyChartData} className="mt-6 h-80 w-full" />
         )}
       </Card>
 
