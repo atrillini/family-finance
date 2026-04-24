@@ -408,7 +408,7 @@ export default function GraficiClient({
         )}
       </Card>
 
-      <Card>
+      <Card className="overflow-visible">
         <Title>Flusso entrate → uscite (Sankey)</Title>
         <Text className="mt-1">
           Nel periodo selezionato: entrate per categoria (sinistra), nodo centrale

@@ -18,6 +18,49 @@ type Props = {
   className?: string;
 };
 
+type TooltipRow = { name?: unknown; value?: unknown };
+
+/** Tooltip dedicato: DefaultTooltipContent + filterNull escludeva a volte il Sankey; colori da :root. */
+function SankeyTooltipContent({
+  active,
+  payload,
+}: {
+  active?: boolean;
+  payload?: readonly TooltipRow[];
+}) {
+  if (!active || !payload?.length) return null;
+  const row = payload[0];
+  if (!row) return null;
+  const label =
+    row.name != null && String(row.name).trim() !== ""
+      ? String(row.name)
+      : "Voce";
+  const raw = row.value;
+  const n =
+    typeof raw === "number"
+      ? raw
+      : typeof raw === "string"
+        ? Number(raw)
+        : NaN;
+  const valueStr = Number.isFinite(n) ? formatCurrency(n) : "—";
+
+  return (
+    <div
+      className="max-w-[280px] rounded-xl border px-3 py-2 shadow-lg"
+      style={{
+        background: "var(--surface)",
+        borderColor: "var(--border)",
+        color: "var(--foreground)",
+      }}
+    >
+      <p className="text-[11px] font-semibold leading-snug break-words">
+        {label}
+      </p>
+      <p className="mt-1 text-[13px] font-medium tabular-nums">{valueStr}</p>
+    </div>
+  );
+}
+
 /**
  * Sankey Recharts: entrate (sinistra) → centro → uscite (destra).
  * Colori e stroke espliciti per dark mode.
@@ -68,12 +111,12 @@ export default function PeriodSankeyChart({ data, className }: Props) {
   return (
     <div
       className={[
-        "relative w-full shrink-0",
+        "relative z-0 w-full shrink-0 overflow-visible",
         "h-[min(520px,72vh)] min-h-[360px] max-h-[640px]",
         className ?? "",
       ].join(" ")}
     >
-      <ResponsiveContainer width="100%" height="100%">
+      <ResponsiveContainer width="100%" height="100%" className="overflow-visible">
         <Sankey
           data={chartData}
           nameKey="name"
@@ -91,16 +134,12 @@ export default function PeriodSankeyChart({ data, className }: Props) {
           }}
         >
           <Tooltip
-            formatter={(v: number | string) =>
-              formatCurrency(typeof v === "number" ? v : Number(v))
-            }
-            contentStyle={{
-              borderRadius: "12px",
-              border: "1px solid rgba(255,255,255,0.12)",
-              background: "var(--surface, #111113)",
-              fontSize: "12px",
-            }}
-            labelStyle={{ color: "var(--foreground, #f5f5f7)" }}
+            content={<SankeyTooltipContent />}
+            filterNull={false}
+            isAnimationActive={false}
+            allowEscapeViewBox={{ x: true, y: true }}
+            wrapperStyle={{ zIndex: 50, outline: "none" }}
+            cursor={{ stroke: "rgba(148, 163, 184, 0.5)", strokeWidth: 1 }}
           />
         </Sankey>
       </ResponsiveContainer>
