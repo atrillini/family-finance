@@ -6,6 +6,7 @@ import { useCallback, useEffect, useState } from "react";
 import {
   LayoutDashboard,
   ArrowLeftRight,
+  LineChart,
   PiggyBank,
   Settings,
   Sparkles,
@@ -20,6 +21,7 @@ import type { User as SupabaseUser } from "@supabase/supabase-js";
 const NAV_ITEMS = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard },
   { href: "/transazioni", label: "Transazioni", icon: ArrowLeftRight },
+  { href: "/grafici", label: "Grafici", icon: LineChart },
   { href: "/regole", label: "Regole IA", icon: Wand2 },
   { href: "/budget", label: "Budget", icon: PiggyBank },
   { href: "/impostazioni", label: "Impostazioni", icon: Settings },

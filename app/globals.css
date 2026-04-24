@@ -1,4 +1,6 @@
 @import "tailwindcss";
+/* Tremor: classi utility generate dai componenti in node_modules */
+@source "../node_modules/@tremor/react/**/*.{js,ts,jsx,tsx}";
 
 :root {
   --background: #f5f5f7;
