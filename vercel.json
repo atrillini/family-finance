@@ -5,7 +5,8 @@
       "schedule": "0 8 * * *"
     }
   ]
-  
+  {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "installCommand": "npm ci --legacy-peer-deps"
+}
 }
