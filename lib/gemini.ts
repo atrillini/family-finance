@@ -699,3 +699,84 @@ function parseParsedQuery(raw: string): ParsedQuery | null {
     explanation,
   };
 }
+
+// ---------------------------------------------------------------------------
+// Insight sui grafici (solo aggregati — niente elenco transazioni)
+// ---------------------------------------------------------------------------
+
+export type ChartInsightTopCategory = {
+  category: string;
+  amount: number;
+  sharePct: number;
+};
+
+export type ChartInsightPayload = {
+  periodCurrentLabel: string;
+  periodPreviousLabel: string;
+  expenseCurrent: number;
+  expensePrevious: number;
+  expenseDeltaPct: number | null;
+  topCategoriesCurrent: ChartInsightTopCategory[];
+  weeklyBurn?: {
+    weekLabel: string;
+    spendCumulativeEnd: number;
+    avgPreviousWeeksCumulativeEnd: number;
+  };
+};
+
+/**
+ * Breve commento in italiano su andamento uscite e categorie, usando solo
+ * numeri aggregati (privacy / costo contenuti).
+ */
+export async function generateChartInsightFromAggregates(
+  payload: ChartInsightPayload
+): Promise<string> {
+  const top = payload.topCategoriesCurrent
+    .slice(0, 8)
+    .map(
+      (r) =>
+        `- ${r.category}: €${r.amount.toFixed(2)} (${r.sharePct.toFixed(1)}% delle uscite)`
+    )
+    .join("\n");
+
+  const deltaLine =
+    payload.expenseDeltaPct == null
+      ? "Variazione % sul periodo precedente: non calcolabile (periodo precedente a zero)."
+      : `Variazione uscite vs periodo precedente: ${payload.expenseDeltaPct > 0 ? "+" : ""}${payload.expenseDeltaPct.toFixed(1)}%.`;
+
+  const weeklyBlock = payload.weeklyBurn
+    ? [
+        "",
+        "Burn rate settimanale (cumulativo nel corso della settimana, confrontato con la media delle settimane precedenti):",
+        `- Settimana di riferimento: ${payload.weeklyBurn.weekLabel}`,
+        `- Spesa cumulativa alla data di confronto: €${payload.weeklyBurn.spendCumulativeEnd.toFixed(2)}`,
+        `- Media allo stesso giorno nelle settimane precedenti (stesso campione del grafico): €${payload.weeklyBurn.avgPreviousWeeksCumulativeEnd.toFixed(2)}`,
+      ].join("\n")
+    : "";
+
+  const aggregates = [
+    "Sei un assistente finanziario informale per una famiglia italiana.",
+    "Ti vengono forniti SOLO totali e percentuali aggregate (nessun dettaglio di singole transazioni).",
+    "",
+    "Scrivi in italiano **al massimo 2 frasi** (o 1 frase + un elenco puntato molto breve di al più 3 punti).",
+    "Tono: chiaro, concreto, senza allarmismi. Non dare consigli di investimento né raccomandazioni fiscali.",
+    "Non inventare cifre: usa solo quelle nel blocco dati.",
+    "",
+    "Dati:",
+    `- Periodo corrente: ${payload.periodCurrentLabel}`,
+    `- Periodo precedente (confronto): ${payload.periodPreviousLabel}`,
+    `- Uscite totali periodo corrente: €${payload.expenseCurrent.toFixed(2)}`,
+    `- Uscite totali periodo precedente: €${payload.expensePrevious.toFixed(2)}`,
+    `- ${deltaLine}`,
+    "",
+    "Uscite per categoria nel periodo corrente (top):",
+    top || "(nessuna uscita nel periodo)",
+    weeklyBlock,
+    "",
+    "Rispondi in Markdown leggero (opzionale **grassetto** sui numeri principali).",
+  ].join("\n");
+
+  const model = getGeminiModel();
+  const result = await model.generateContent(aggregates);
+  return result.response.text().trim();
+}
