@@ -8,6 +8,7 @@ import SummaryCards from "./SummaryCards";
 import TransactionsTable from "./TransactionsTable";
 import AddTransaction from "./AddTransaction";
 import SmartSearchBar from "./SmartSearchBar";
+import SemanticInterpretationPanel from "./SemanticInterpretationPanel";
 import AskAI from "./AskAI";
 import AccountsSection from "./AccountsSection";
 import ConnectBankDialog from "./ConnectBankDialog";
@@ -43,7 +44,11 @@ import {
   getSupabaseClient,
   isSupabaseConfigured,
 } from "@/lib/supabase";
-import type { ParsedQuery, QueryFilter, TransactionCategory } from "@/lib/gemini";
+import type { ParsedQuery, TransactionCategory } from "@/lib/gemini";
+import {
+  applySupabaseFilter,
+  rowMatchesFilter,
+} from "@/lib/semantic-transaction-filter";
 import { useHeaderSearch } from "@/lib/search-context";
 import {
   isDateInRange,
@@ -1474,8 +1479,15 @@ export default function DashboardClient({
       />
 
       <div className="flex flex-col items-stretch gap-3 md:flex-row md:items-start">
-        <div className="min-w-0 flex-1">
+        <div className="min-w-0 flex-1 space-y-3">
           <SmartSearchBar active={activeQuery} onApply={setActiveQuery} />
+          {activeQuery ? (
+            <SemanticInterpretationPanel
+              active={activeQuery}
+              rows={baseRows}
+              headerRefineActive={Boolean(headerQuery.trim())}
+            />
+          ) : null}
         </div>
         {/*
           Navigazione mese-per-mese: frecce ◀ ▶ per scorrere + selettore
@@ -1571,73 +1583,3 @@ export default function DashboardClient({
   );
 }
 
-// ---------------------------------------------------------------------------
-// Filter helpers
-// ---------------------------------------------------------------------------
-
-/**
- * Applica un filtro Gemini a una query Supabase. I nomi dei metodi
- * riflettono l'API PostgREST:
- *   - eq/gt/lt: confronto diretto
- *   - ilike:    LIKE case-insensitive (value deve già contenere i `%`)
- *   - containedBy: per colonne array (es. tags) → usiamo `contains([value])`
- *     perché semanticamente l'utente cerca righe che *contengono* quel tag.
- *
- * Il cast a `any` è necessario perché i generici di `PostgrestFilterBuilder`
- * (v2.103) sono invasivi; a runtime le chiamate restano corrette perché usiamo
- * solo metodi documentati del client Supabase.
- */
-function applySupabaseFilter<Q>(query: Q, filter: QueryFilter): Q {
-  const { column, operator, value } = filter;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const q = query as any;
-
-  switch (operator) {
-    case "eq":
-      return q.eq(column, value) as Q;
-    case "gt":
-      return q.gt(column, value) as Q;
-    case "lt":
-      return q.lt(column, value) as Q;
-    case "ilike":
-      return q.ilike(column, String(value)) as Q;
-    case "containedBy":
-      if (column === "tags") {
-        return q.contains("tags", [String(value)]) as Q;
-      }
-      return q.eq(column, value) as Q;
-    default:
-      return query;
-  }
-}
-
-/**
- * Valuta localmente se una riga rispetta il filtro.
- * Usata sia per i mock (Supabase non configurato) sia per le UPDATE/INSERT
- * in arrivo dal realtime quando c'è un filtro attivo.
- */
-function rowMatchesFilter(row: Transaction, filter: QueryFilter): boolean {
-  const raw = (row as unknown as Record<string, unknown>)[filter.column];
-
-  switch (filter.operator) {
-    case "eq":
-      return String(raw) === String(filter.value);
-    case "gt":
-      return Number(raw) > Number(filter.value);
-    case "lt":
-      return Number(raw) < Number(filter.value);
-    case "ilike": {
-      const pattern = String(filter.value).replace(/%/g, "").toLowerCase();
-      return String(raw ?? "").toLowerCase().includes(pattern);
-    }
-    case "containedBy":
-      if (Array.isArray(raw)) {
-        return raw
-          .map((v) => String(v).toLowerCase())
-          .includes(String(filter.value).toLowerCase());
-      }
-      return false;
-    default:
-      return true;
-  }
-}

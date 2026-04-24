@@ -139,20 +139,17 @@ export default function SmartSearchBar({ active, onApply }: SmartSearchBarProps)
         </div>
       ) : null}
 
-      {/* Spiegazione di Gemini */}
+      {/* Ricerca attiva: dettaglio interpretazione + totali nel pannello dedicato sotto */}
       {active ? (
-        <div className="mt-3 flex items-start gap-2 rounded-xl bg-[color:var(--color-accent)]/8 px-3 py-2 text-[12.5px] text-[color:var(--color-foreground)]">
-          <Sparkles className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[color:var(--color-accent)]" />
-          <div className="flex-1">
-            <p>
-              <span className="font-medium">Gemini:</span>{" "}
-              {active.explanation || "Filtro applicato."}
-            </p>
-            <p className="mt-0.5 font-mono text-[11px] text-[color:var(--color-muted-foreground)]">
-              {active.filter.column} · {active.filter.operator} ·{" "}
-              {String(active.filter.value)}
-            </p>
-          </div>
+        <div className="mt-3 flex items-center gap-2 rounded-xl border border-[color:var(--color-border)] bg-[color:var(--color-surface-muted)]/50 px-3 py-2 text-[12px] text-[color:var(--color-muted-foreground)]">
+          <Sparkles className="h-3.5 w-3.5 shrink-0 text-[color:var(--color-accent)]" />
+          <span>
+            Ricerca intelligente attiva — vedi{" "}
+            <span className="font-medium text-[color:var(--color-foreground)]">
+              Ecco come ho interpretato…
+            </span>{" "}
+            e i totali nel riquadro sotto.
+          </span>
         </div>
       ) : null}
 

@@ -14,6 +14,8 @@ import {
 import { toast } from "sonner";
 import TransactionsTable from "./TransactionsTable";
 import AddTransaction from "./AddTransaction";
+import SmartSearchBar from "./SmartSearchBar";
+import SemanticInterpretationPanel from "./SemanticInterpretationPanel";
 import DateRangePicker from "./DateRangePicker";
 import MonthNavigator from "./MonthNavigator";
 import BulkActionsBar from "./BulkActionsBar";
@@ -32,8 +34,13 @@ import {
 } from "@/lib/supabase";
 import {
   TRANSACTION_CATEGORIES,
+  type ParsedQuery,
   type TransactionCategory,
 } from "@/lib/gemini";
+import {
+  applySupabaseFilter,
+  rowMatchesFilter,
+} from "@/lib/semantic-transaction-filter";
 import { useHeaderSearch } from "@/lib/search-context";
 import {
   formatRangeLabel,
@@ -84,8 +91,8 @@ type Props = {
  *
  * NOTA sulla duplicazione con `DashboardClient`: la logica di fetch +
  * realtime + edit + delete-con-undo è volutamente replicata qui perché
- * questa pagina ha esigenze diverse (limit più alto, niente filtro
- * semantico via Gemini, set di filtri dedicato). Se in futuro si dovesse
+ * questa pagina ha esigenze diverse (limit più alto, ricerca semantica
+ * NL come la dashboard, set di filtri dedicato). Se in futuro si dovesse
  * uniformare, estrarre un hook `useTransactionsStore` che incapsuli
  * `transactions`, `accounts`, `save`, `delete` resta la mossa naturale.
  */
@@ -113,6 +120,7 @@ export default function TransactionsClient({
   const [dateRange, setDateRange] = useState<DateRange | null>(() =>
     dateRangeFromIso(defaultRangeIso)
   );
+  const [activeQuery, setActiveQuery] = useState<ParsedQuery | null>(null);
 
   const { query: headerQuery, setQuery: setHeaderQuery } = useHeaderSearch();
 
@@ -120,6 +128,10 @@ export default function TransactionsClient({
   // (ri-carica da Supabase quando l'utente cambia periodo).
   const rangeKey = dateRange
     ? `${dateRange.from.getTime()}|${(dateRange.to ?? dateRange.from).getTime()}`
+    : "";
+
+  const filterKey = activeQuery
+    ? `${activeQuery.filter.column}|${activeQuery.filter.operator}|${activeQuery.filter.value}`
     : "";
 
   const refetchAccountsList = useCallback(async () => {
@@ -151,6 +163,9 @@ export default function TransactionsClient({
         const data = await fetchTransactionsBatched(supabase, {
           dateFromIso: fromIso,
           dateToIso: toIso,
+          modify: activeQuery
+            ? (q) => applySupabaseFilter(q, activeQuery.filter)
+            : undefined,
         });
 
         if (cancelled) return;
@@ -175,13 +190,19 @@ export default function TransactionsClient({
           setTransactions((prev) => {
             if (payload.eventType === "INSERT") {
               const row = payload.new as Transaction;
+              if (activeQuery && !rowMatchesFilter(row, activeQuery.filter)) {
+                return prev;
+              }
               if (dateRange && !isDateInRange(row.date, dateRange)) return prev;
               if (prev.some((p) => p.id === row.id)) return prev;
               return [row, ...prev];
             }
             if (payload.eventType === "UPDATE") {
               const row = payload.new as Transaction;
-              if (dateRange && !isDateInRange(row.date, dateRange)) {
+              const outOfFilter =
+                (activeQuery && !rowMatchesFilter(row, activeQuery.filter)) ||
+                (dateRange && !isDateInRange(row.date, dateRange));
+              if (outOfFilter) {
                 return prev.filter((p) => p.id !== row.id);
               }
               return prev.map((p) => (p.id === row.id ? row : p));
@@ -201,7 +222,7 @@ export default function TransactionsClient({
       supabase.removeChannel(channel);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [configured, rangeKey]);
+  }, [configured, rangeKey, filterKey]);
 
   // ---------------------------------------------------------------------------
   // Fetch + realtime: conti (servono per i filtri e per il modal di edit).
@@ -254,10 +275,29 @@ export default function TransactionsClient({
   }, [configured, refetchAccountsList]);
 
   // ---------------------------------------------------------------------------
+  // Righe nel solo ambito periodo + ricerca NL (per totali pannello interpretazione).
+  // ---------------------------------------------------------------------------
+  const nlScopeRows = useMemo<Transaction[]>(() => {
+    if (configured) return transactions;
+    let rows = transactions;
+    if (dateRange) {
+      rows = rows.filter((t) => isDateInRange(t.date, dateRange));
+    }
+    if (activeQuery) {
+      rows = rows.filter((t) => rowMatchesFilter(t, activeQuery.filter));
+    }
+    return rows;
+  }, [configured, transactions, dateRange, activeQuery]);
+
+  // ---------------------------------------------------------------------------
   // Applicazione filtri locali (sopra al risultato già caricato).
   // ---------------------------------------------------------------------------
   const displayed = useMemo<Transaction[]>(() => {
     let list = transactions;
+
+    if (!configured && activeQuery) {
+      list = list.filter((t) => rowMatchesFilter(t, activeQuery.filter));
+    }
 
     if (typeFilter === "income") list = list.filter((t) => t.amount >= 0);
     else if (typeFilter === "expense") list = list.filter((t) => t.amount < 0);
@@ -297,6 +337,7 @@ export default function TransactionsClient({
     headerQuery,
     configured,
     dateRange,
+    activeQuery,
   ]);
 
   const csvExportRowCount = useMemo(() => {
@@ -323,6 +364,7 @@ export default function TransactionsClient({
     Boolean(accountFilter) ||
     Boolean(categoryFilter) ||
     Boolean(headerQuery.trim()) ||
+    Boolean(activeQuery) ||
     !matchesDefaultPeriod;
 
   const handleExportCsv = useCallback(() => {
@@ -336,6 +378,11 @@ export default function TransactionsClient({
     }
     const noteParts = [
       dateRange ? `Periodo: ${formatRangeLabel(dateRange)}` : null,
+      activeQuery?.explanation
+        ? `Ricerca NL: ${activeQuery.explanation}`
+        : activeQuery
+          ? `Filtro NL: ${activeQuery.filter.column} ${activeQuery.filter.operator} ${String(activeQuery.filter.value)}`
+          : null,
       headerQuery.trim() ? `Testo: ${headerQuery.trim()}` : null,
       categoryFilter ? `Categoria: ${categoryFilter}` : null,
       accountFilter
@@ -362,6 +409,7 @@ export default function TransactionsClient({
     accountFilter,
     typeFilter,
     accounts,
+    activeQuery,
   ]);
 
   function resetFilters() {
@@ -369,6 +417,7 @@ export default function TransactionsClient({
     setAccountFilter("");
     setCategoryFilter("");
     setHeaderQuery("");
+    setActiveQuery(null);
     setDateRange(dateRangeFromIso(defaultRangeIso));
   }
 
@@ -906,9 +955,11 @@ export default function TransactionsClient({
   // ---------------------------------------------------------------------------
   // Render
   // ---------------------------------------------------------------------------
-  const tableTitle = hasActiveFilters
-    ? `Risultati filtrati · ${displayed.length} movimenti`
-    : "Storico movimenti";
+  const tableTitle = activeQuery
+    ? `Ricerca intelligente · ${displayed.length} movimenti`
+    : hasActiveFilters
+      ? `Risultati filtrati · ${displayed.length} movimenti`
+      : "Storico movimenti";
 
   return (
     <div
@@ -938,6 +989,15 @@ export default function TransactionsClient({
         accounts={accounts}
         tagSuggestions={distinctTagSuggestions}
       />
+
+      <SmartSearchBar active={activeQuery} onApply={setActiveQuery} />
+      {activeQuery ? (
+        <SemanticInterpretationPanel
+          active={activeQuery}
+          rows={nlScopeRows}
+          headerRefineActive={Boolean(headerQuery.trim())}
+        />
+      ) : null}
 
       <FiltersPanel
         typeFilter={typeFilter}

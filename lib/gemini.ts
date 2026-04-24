@@ -378,14 +378,18 @@ export type FilterableColumn = (typeof FILTERABLE_COLUMNS)[number];
  * Operatori supportati. Vengono mappati su metodi del client Supabase:
  *   eq          → .eq()
  *   gt          → .gt()
+ *   gte         → .gte()
  *   lt          → .lt()
+ *   lte         → .lte()
  *   ilike       → .ilike()  (testo case-insensitive con wildcard %)
  *   containedBy → .contains() (per colonne array, es. `tags`)
  */
 export const FILTER_OPERATORS = [
   "eq",
   "gt",
+  "gte",
   "lt",
+  "lte",
   "ilike",
   "containedBy",
 ] as const;
@@ -439,7 +443,7 @@ export async function parseNaturalLanguageQuery(
     "- merchant (testo)",
     "",
     "Devi restituire esclusivamente un oggetto JSON con questa struttura:",
-    '{ "filter": { "column": "nome_colonna", "operator": "eq" | "gt" | "lt" | "ilike" | "containedBy", "value": "valore" }, "explanation": "una breve frase in italiano che spiega cosa stai filtrando" }',
+    '{ "filter": { "column": "nome_colonna", "operator": "eq" | "gt" | "gte" | "lt" | "lte" | "ilike" | "containedBy", "value": "valore" }, "explanation": "una breve frase in italiano che spiega cosa stai filtrando" }',
     "",
     "Regole:",
     "- Per ricerche testuali su description o merchant usa 'ilike' con il valore tra simboli % (es. '%netflix%').",
@@ -447,7 +451,9 @@ export async function parseNaturalLanguageQuery(
     "- Se l'utente chiede 'spese' o 'uscite', filtra per amount < 0 usando operator 'lt' con value 0.",
     "- Se l'utente chiede 'entrate', filtra per amount > 0 usando operator 'gt' con value 0.",
     "- Per importi specifici (es. 'sopra i 50 euro'), converti in numero (es. 50 o -50 se parla di uscite).",
-    `- Per riferimenti temporali (es. 'oggi', 'questo mese') calcola la data considerando che oggi è ${today} e usa il formato ISO YYYY-MM-DD.`,
+    `- Per riferimenti temporali (es. 'oggi', 'questo mese', 'anno scorso', 'a Natale', 'dicembre 2025') calcola le date considerando che oggi è ${today} e usa il formato ISO YYYY-MM-DD.`,
+    "- Per un intervallo di date (es. 'anno scorso', 'dal 1 gennaio al 31 marzo') scegli il vincolo più utile: spesso basta un solo limite (es. tutto il 2025 con date gte 2025-01-01 e date lte 2025-12-31) — se serve un solo filtro, preferisci quello che copre meglio l'intento (es. gte sul primo giorno dell'anno per 'anno scorso').",
+    "- Per combinare concetto + periodo (es. 'regali Natale anno scorso'), usa prima il filtro più selettivo: spesso description o tags con ilike (es. '%regalo%' o '%natale%') e menziona il periodo nell'explanation; se puoi esprimere il periodo con un solo vincolo su date (gte/lte), usalo.",
     "- Se la query è ambigua, scegli il filtro più probabile e spiegalo chiaramente in 'explanation'.",
     "",
     `Richiesta utente: "${cleaned}"`,
