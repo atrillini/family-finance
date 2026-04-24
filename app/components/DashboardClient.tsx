@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { AlertCircle, Loader2 } from "lucide-react";
+import { AlertCircle, Download, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import SummaryCards from "./SummaryCards";
 import TransactionsTable from "./TransactionsTable";
@@ -49,11 +49,17 @@ import {
   isDateInRange,
   rangeToIsoBounds,
   getPreviousRange,
+  formatRangeLabel,
   type DateRange,
 } from "@/lib/date-range";
 import { formatPeriodHeading } from "@/lib/period-labels";
 import { fetchTransactionsBatched } from "@/lib/supabase-transactions-batched";
 import { dateRangeFromIso } from "@/lib/default-month-range";
+import {
+  buildCommercialistaCsv,
+  commercialistaCsvFilename,
+} from "@/lib/export-transactions-csv";
+import { downloadTextFile } from "@/lib/download-text-file";
 
 type Props = {
   /** Mese corrente (1° — oggi) serializzato dal server per idratazione coerente. */
@@ -314,6 +320,48 @@ export default function DashboardClient({
       return hay.includes(q);
     });
   }, [baseRows, headerQuery]);
+
+  const csvExportRowCount = useMemo(() => {
+    if (selectedIds.size > 0) {
+      return displayed.filter((t) => selectedIds.has(t.id)).length;
+    }
+    return displayed.length;
+  }, [displayed, selectedIds]);
+
+  const handleExportDashboardCsv = useCallback(() => {
+    const rows =
+      selectedIds.size > 0
+        ? displayed.filter((t) => selectedIds.has(t.id))
+        : displayed;
+    if (rows.length === 0) {
+      toast.error("Nessun movimento da esportare.");
+      return;
+    }
+    const noteParts = [
+      dateRange ? `Periodo: ${formatRangeLabel(dateRange)}` : null,
+      activeQuery?.explanation
+        ? `Ricerca: ${activeQuery.explanation}`
+        : activeQuery
+          ? `Filtro: ${activeQuery.filter.column} ${activeQuery.filter.operator} ${String(activeQuery.filter.value)}`
+          : null,
+      headerQuery.trim() ? `Testo: ${headerQuery.trim()}` : null,
+      selectedIds.size > 0
+        ? `Selezione: ${rows.length} / ${displayed.length} filtrati`
+        : `Righe: ${rows.length}`,
+    ].filter(Boolean);
+    const csv = buildCommercialistaCsv(rows, accounts, {
+      note: noteParts.join(" · "),
+    });
+    downloadTextFile(commercialistaCsvFilename("dashboard_movimenti"), csv);
+    toast.success(`CSV esportato (${rows.length} movimenti).`);
+  }, [
+    selectedIds,
+    displayed,
+    dateRange,
+    activeQuery,
+    headerQuery,
+    accounts,
+  ]);
 
   const periodHeading = useMemo(
     () => formatPeriodHeading(dateRange),
@@ -1427,6 +1475,16 @@ export default function DashboardClient({
         <div className="flex flex-wrap items-center gap-2 md:pt-4">
           <MonthNavigator value={dateRange} onChange={setDateRange} />
           <DateRangePicker value={dateRange} onChange={setDateRange} />
+          <button
+            type="button"
+            onClick={() => void handleExportDashboardCsv()}
+            disabled={csvExportRowCount === 0}
+            title="Esporta in CSV i movimenti del periodo (o solo quelli selezionati)"
+            className="inline-flex items-center gap-1.5 rounded-full border border-[color:var(--color-border)] bg-[color:var(--color-surface)] px-3 h-8 text-[12px] font-medium text-[color:var(--color-muted-foreground)] transition-colors hover:bg-[color:var(--color-surface-muted)] hover:text-[color:var(--color-foreground)] disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <Download className="h-3.5 w-3.5" strokeWidth={2} />
+            Esporta CSV
+          </button>
         </div>
       </div>
 

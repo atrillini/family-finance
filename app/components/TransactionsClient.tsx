@@ -9,6 +9,7 @@ import {
   ArrowUpRight,
   X,
   Filter,
+  Download,
 } from "lucide-react";
 import { toast } from "sonner";
 import TransactionsTable from "./TransactionsTable";
@@ -55,6 +56,11 @@ import {
 } from "@/lib/categorization-learning-utils";
 import { dateRangeFromIso } from "@/lib/default-month-range";
 import { fetchTransactionsBatched } from "@/lib/supabase-transactions-batched";
+import {
+  buildCommercialistaCsv,
+  commercialistaCsvFilename,
+} from "@/lib/export-transactions-csv";
+import { downloadTextFile } from "@/lib/download-text-file";
 
 type TypeFilter = "all" | "income" | "expense" | "subscription";
 
@@ -282,6 +288,13 @@ export default function TransactionsClient({
     dateRange,
   ]);
 
+  const csvExportRowCount = useMemo(() => {
+    if (selectedIds.size > 0) {
+      return displayed.filter((t) => selectedIds.has(t.id)).length;
+    }
+    return displayed.length;
+  }, [displayed, selectedIds]);
+
   // Totali informativi della selezione corrente — stessa semantica delle card
   // home: giroconti esclusi (`computeMonthlySummary`).
   const totals = useMemo(() => {
@@ -300,6 +313,45 @@ export default function TransactionsClient({
     Boolean(categoryFilter) ||
     Boolean(headerQuery.trim()) ||
     !matchesDefaultPeriod;
+
+  const handleExportCsv = useCallback(() => {
+    const rows =
+      selectedIds.size > 0
+        ? displayed.filter((t) => selectedIds.has(t.id))
+        : displayed;
+    if (rows.length === 0) {
+      toast.error("Nessun movimento da esportare.");
+      return;
+    }
+    const noteParts = [
+      dateRange ? `Periodo: ${formatRangeLabel(dateRange)}` : null,
+      headerQuery.trim() ? `Testo: ${headerQuery.trim()}` : null,
+      categoryFilter ? `Categoria: ${categoryFilter}` : null,
+      accountFilter
+        ? `Conto: ${
+            accounts.find((a) => a.id === accountFilter)?.name ?? accountFilter
+          }`
+        : null,
+      typeFilter !== "all" ? `Tipo: ${typeFilter}` : null,
+      selectedIds.size > 0
+        ? `Selezione: ${rows.length} / ${displayed.length} filtrati`
+        : `Righe: ${rows.length}`,
+    ].filter(Boolean);
+    const csv = buildCommercialistaCsv(rows, accounts, {
+      note: noteParts.join(" · "),
+    });
+    downloadTextFile(commercialistaCsvFilename("movimenti"), csv);
+    toast.success(`CSV esportato (${rows.length} movimenti).`);
+  }, [
+    selectedIds,
+    displayed,
+    dateRange,
+    headerQuery,
+    categoryFilter,
+    accountFilter,
+    typeFilter,
+    accounts,
+  ]);
 
   function resetFilters() {
     setTypeFilter("all");
@@ -893,6 +945,8 @@ export default function TransactionsClient({
         totals={totals}
         shownCount={displayed.length}
         totalCount={transactions.length}
+        onExportCsv={() => void handleExportCsv()}
+        exportDisabled={csvExportRowCount === 0}
       />
 
       {loading && displayed.length === 0 ? (
@@ -968,6 +1022,8 @@ type FiltersPanelProps = {
   totals: { income: number; expenses: number };
   shownCount: number;
   totalCount: number;
+  onExportCsv?: () => void;
+  exportDisabled?: boolean;
 };
 
 function FiltersPanel({
@@ -987,6 +1043,8 @@ function FiltersPanel({
   totals,
   shownCount,
   totalCount,
+  onExportCsv,
+  exportDisabled,
 }: FiltersPanelProps) {
   const activeAccount = accounts.find((a) => a.id === accountFilter);
 
@@ -1015,6 +1073,18 @@ function FiltersPanel({
         <div className="flex flex-wrap items-center gap-2">
           <MonthNavigator value={dateRange} onChange={setDateRange} />
           <DateRangePicker value={dateRange} onChange={setDateRange} />
+          {onExportCsv ? (
+            <button
+              type="button"
+              onClick={onExportCsv}
+              disabled={exportDisabled}
+              title="Esporta in CSV i movimenti filtrati (o solo quelli selezionati)"
+              className="inline-flex items-center gap-1.5 rounded-full border border-[color:var(--color-border)] bg-[color:var(--color-surface)] px-3 h-8 text-[12px] font-medium text-[color:var(--color-muted-foreground)] transition-colors hover:bg-[color:var(--color-surface-muted)] hover:text-[color:var(--color-foreground)] disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <Download className="h-3.5 w-3.5" strokeWidth={2} />
+              Esporta CSV
+            </button>
+          ) : null}
           {hasActiveFilters ? (
             <button
               type="button"
