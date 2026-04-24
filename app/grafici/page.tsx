@@ -14,7 +14,7 @@ export default async function GraficiPage() {
     <div className="mx-auto w-full max-w-[1600px] px-4 sm:px-6 md:px-10 py-6 md:py-10 space-y-8">
       <PageHeader
         title="Grafici"
-        subtitle="Spesa cumulativa sul periodo, burn rate settimanale vs media delle settimane precedenti e insight su aggregati."
+        subtitle="Spesa cumulativa, burn rate settimanale, Sankey entrate/uscite e insight su aggregati."
         avatarInitials={avatarInitials}
       />
 

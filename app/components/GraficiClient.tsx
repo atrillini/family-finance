@@ -10,6 +10,7 @@ import GraficiChartTooltip, {
   type GraficiChartTooltipProps,
 } from "./GraficiChartTooltip";
 import MonthNavigator from "./MonthNavigator";
+import PeriodSankeyChart from "./PeriodSankeyChart";
 import WeeklyBurnLineChart from "./WeeklyBurnLineChart";
 import {
   computeMonthlySummary,
@@ -40,6 +41,7 @@ import {
 import { getSupabaseClient, isSupabaseConfigured } from "@/lib/supabase";
 import { fetchTransactionsBatched } from "@/lib/supabase-transactions-batched";
 import { dateRangeFromIso } from "@/lib/default-month-range";
+import { buildPeriodSankeyData } from "@/lib/sankey-period";
 
 /** Colori espliciti (hex) per contrasto su sfondo scuro/chiaro — Tremor Area. */
 const CHART_AREA_COLORS = ["#3b82f6", "#94a3b8"] as const;
@@ -176,6 +178,11 @@ export default function GraficiClient({
       WEEKLY_BURN_DEFAULT_PREV_WEEKS
     );
   }, [transactions, referenceDayForWeek]);
+
+  const sankeyData = useMemo(() => {
+    if (!dateRange) return null;
+    return buildPeriodSankeyData(transactions, dateRange);
+  }, [transactions, dateRange]);
 
   const insightPayload = useMemo((): ChartInsightPayload | null => {
     if (!dateRange || !previousRange) return null;
@@ -398,6 +405,29 @@ export default function GraficiClient({
           </p>
         ) : (
           <WeeklyBurnLineChart data={weeklyChartData} className="mt-6 h-80 w-full" />
+        )}
+      </Card>
+
+      <Card>
+        <Title>Flusso entrate → uscite (Sankey)</Title>
+        <Text className="mt-1">
+          Nel periodo selezionato: entrate per categoria (sinistra), nodo centrale
+          di riepilogo, uscite per categoria (destra). Giroconti esclusi. Se
+          entrate e uscite non coincidono, compaiono voci di bilanciamento
+          (&quot;Copertura oltre le entrate&quot; o &quot;Avanzo non speso&quot;).
+          Passa il mouse su collegamenti e rettangoli per gli importi.
+        </Text>
+        {loading && !sankeyData ? (
+          <div className="mt-8 flex min-h-[280px] items-center justify-center gap-2 text-[13px] text-tremor-content-subtle">
+            <Loader2 className="h-4 w-4 animate-spin" />
+            Caricamento…
+          </div>
+        ) : !sankeyData ? (
+          <p className="mt-6 text-[13px] text-tremor-content-subtle">
+            Nessun movimento nel periodo per costruire il Sankey.
+          </p>
+        ) : (
+          <PeriodSankeyChart data={sankeyData} className="mt-4 min-h-[380px] w-full" />
         )}
       </Card>
 
