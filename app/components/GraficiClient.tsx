@@ -427,7 +427,7 @@ export default function GraficiClient({
             Nessun movimento nel periodo per costruire il Sankey.
           </p>
         ) : (
-          <PeriodSankeyChart data={sankeyData} className="mt-4 min-h-[380px] w-full" />
+          <PeriodSankeyChart data={sankeyData} className="mt-4 w-full" />
         )}
       </Card>
 

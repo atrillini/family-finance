@@ -64,8 +64,15 @@ export default function PeriodSankeyChart({ data, className }: Props) {
     };
   }, [centerIdx]);
 
+  /* Altezza fissa obbligatoria: con solo min-height, height:100% del figlio = 0 e il Sankey non renderizza. */
   return (
-    <div className={className ?? "h-[min(520px,70vh)] w-full min-h-[360px]"}>
+    <div
+      className={[
+        "relative w-full shrink-0",
+        "h-[min(520px,72vh)] min-h-[360px] max-h-[640px]",
+        className ?? "",
+      ].join(" ")}
+    >
       <ResponsiveContainer width="100%" height="100%">
         <Sankey
           data={chartData}
