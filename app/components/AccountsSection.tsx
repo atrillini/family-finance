@@ -17,6 +17,7 @@ import {
   isPocketAccount,
   type Account,
 } from "@/lib/mock-data";
+import { isCashWalletAccount } from "@/lib/cash-wallet";
 import { formatRelativeShort } from "@/lib/format-relative-it";
 
 type Props = {
@@ -163,6 +164,7 @@ function AccountCard({
   const isLinked = Boolean(account.gocardless_account_id);
   const canSync = isLinked && Boolean(onSync);
   const pocket = isPocketAccount(account);
+  const cash = isCashWalletAccount(account);
 
   return (
     <div
@@ -239,7 +241,9 @@ function AccountCard({
           <p className="mt-1 text-[11px] text-[color:var(--color-muted-foreground)]">
             {account.last_sync_at
               ? `Agg. ${formatRelativeShort(account.last_sync_at)}`
-              : "Saldo attuale"}
+              : cash
+                ? "Somma dei movimenti sul conto"
+                : "Saldo attuale"}
           </p>
         </div>
         {canSync ? (

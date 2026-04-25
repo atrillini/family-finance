@@ -782,3 +782,55 @@ export async function generateChartInsightFromAggregates(
   const result = await model.generateContent(aggregates);
   return result.response.text().trim();
 }
+
+// ---------------------------------------------------------------------------
+// Narrativa scenario investimenti (solo numeri già calcolati dall’app)
+// ---------------------------------------------------------------------------
+
+export type InvestmentNarrativePayload = {
+  startingPrincipal: number;
+  annualReturnPct: number;
+  monthlyContribution: number;
+  horizonYears: number;
+  endValue: number;
+  totalContributions: number;
+  marketComponent: number;
+  /** Se il capitale iniziale includeva anche i saldi conto. */
+  includeLiquidityInPrincipal: boolean;
+};
+
+/**
+ * Commento breve in italiano su una proiezione già calcolata (nessun consiglio
+ * di investimento: solo linguaggio naturale sui numeri forniti).
+ */
+export async function generateInvestmentScenarioNarrative(
+  payload: InvestmentNarrativePayload
+): Promise<string> {
+  const liq = payload.includeLiquidityInPrincipal
+    ? "Il capitale iniziale include anche una stima della liquidità sui conti."
+    : "Il capitale iniziale coincide con la somma dei valori attuali delle posizioni manuali.";
+
+  const prompt = [
+    "Sei un assistente che spiega in italiano, in modo sobrio e non allarmistico,",
+    "una **simulazione numerica** già calcolata dall’applicazione (non fare calcoli tuoi: usa solo le cifre sotto).",
+    "",
+    "Vincoli:",
+    "- Al massimo **2 paragrafi brevi** o **3 bullet**.",
+    "- Non dare consigli di investimento, né fiscali, né di prodotto finanziario.",
+    "- Non presentare il risultato come garantito o previsione di mercato.",
+    "- Puoi usare Markdown leggero.",
+    "",
+    "Dati della simulazione:",
+    `- Orizzonte: ${payload.horizonYears} anni`,
+    `- Rendimento annuo ipotizzato (nominale, composto mensilmente): ${payload.annualReturnPct.toFixed(2)}%`,
+    `- Versamento mensile ipotizzato: €${payload.monthlyContribution.toFixed(2)}`,
+    `- Capitale iniziale considerato: €${payload.startingPrincipal.toFixed(2)} (${liq})`,
+    `- Valore finale stimato dall’app: €${payload.endValue.toFixed(2)}`,
+    `- Somma versamenti nel periodo: €${payload.totalContributions.toFixed(2)}`,
+    `- Componente attribuibile al rendimento (valore finale − capitale iniziale − versamenti): €${payload.marketComponent.toFixed(2)}`,
+  ].join("\n");
+
+  const model = getGeminiModel();
+  const result = await model.generateContent(prompt);
+  return result.response.text().trim();
+}

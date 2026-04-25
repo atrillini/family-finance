@@ -3,29 +3,10 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
-import {
-  LayoutDashboard,
-  ArrowLeftRight,
-  LineChart,
-  PiggyBank,
-  Settings,
-  Sparkles,
-  Wand2,
-  LogOut,
-  Terminal,
-  Shield,
-} from "lucide-react";
+import { Sparkles, LogOut, Terminal, Shield } from "lucide-react";
 import { getSupabaseClient } from "@/lib/supabase";
 import type { User as SupabaseUser } from "@supabase/supabase-js";
-
-const NAV_ITEMS = [
-  { href: "/", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/transazioni", label: "Transazioni", icon: ArrowLeftRight },
-  { href: "/grafici", label: "Grafici", icon: LineChart },
-  { href: "/regole", label: "Regole IA", icon: Wand2 },
-  { href: "/budget", label: "Budget", icon: PiggyBank },
-  { href: "/impostazioni", label: "Impostazioni", icon: Settings },
-];
+import { APP_MAIN_NAV_ITEMS } from "@/lib/app-nav";
 
 export default function Sidebar() {
   const pathname = usePathname();
@@ -106,7 +87,7 @@ export default function Sidebar() {
 
       <nav className="flex-1 min-h-0 px-3">
         <ul className="space-y-1">
-          {NAV_ITEMS.map(({ href, label, icon: Icon }) => {
+          {APP_MAIN_NAV_ITEMS.map(({ href, label, icon: Icon }) => {
             const isActive =
               href === "/" ? pathname === "/" : pathname.startsWith(href);
             return (

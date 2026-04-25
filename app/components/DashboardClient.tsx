@@ -28,6 +28,8 @@ import {
   type Account,
   type Transaction,
 } from "@/lib/mock-data";
+import { fetchCashLedgerTotals } from "@/lib/cash-ledger";
+import { isCashWalletAccount } from "@/lib/cash-wallet";
 import { normalizeTagLabel } from "@/lib/tag-colors";
 import {
   postCategorizationExample,
@@ -82,6 +84,12 @@ export default function DashboardClient({
   const configured = isSupabaseConfigured();
   const [transactions, setTransactions] = useState<Transaction[]>(fallback);
   const [accounts, setAccounts] = useState<Account[]>(accountsFallback);
+  /** Somma `transactions.amount` per conto Contanti (il campo `balance` non viene aggiornato dal sync). */
+  const [cashLedger, setCashLedger] = useState<Record<string, number>>({});
+  const [ledgerTick, setLedgerTick] = useState(0);
+  const accountsRef = useRef(accounts);
+  accountsRef.current = accounts;
+
   const [loading, setLoading] = useState(configured);
   const [loadingAccounts, setLoadingAccounts] = useState(configured);
   const [error, setError] = useState<string | null>(null);
@@ -106,6 +114,40 @@ export default function DashboardClient({
 
   // Testo di ricerca dell'header (condiviso via context).
   const { query: headerQuery, setQuery: setHeaderQuery } = useHeaderSearch();
+
+  useEffect(() => {
+    if (!configured) return;
+    let cancelled = false;
+    const list = accountsRef.current;
+    const ids = list.filter(isCashWalletAccount).map((a) => a.id);
+    void (async () => {
+      if (ids.length === 0) {
+        if (!cancelled) setCashLedger({});
+        return;
+      }
+      try {
+        const supabase = getSupabaseClient();
+        const totals = await fetchCashLedgerTotals(supabase, ids);
+        if (!cancelled) setCashLedger(totals);
+      } catch (e) {
+        console.warn("[dashboard/cash-ledger]", e);
+        if (!cancelled) setCashLedger({});
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [configured, accounts, ledgerTick]);
+
+  const accountsDisplay = useMemo(
+    () =>
+      accounts.map((a) => {
+        if (!isCashWalletAccount(a)) return a;
+        if (!Object.prototype.hasOwnProperty.call(cashLedger, a.id)) return a;
+        return { ...a, balance: cashLedger[a.id]! };
+      }),
+    [accounts, cashLedger]
+  );
 
   // Router + search params per gestire il flash message dopo il callback
   // GoCardless (es. `/?bank=connected&count=1&requisition=...`).
@@ -191,6 +233,7 @@ export default function DashboardClient({
             }
             return prev;
           });
+          setLedgerTick((n) => n + 1);
         }
       )
       .subscribe();
@@ -365,7 +408,7 @@ export default function DashboardClient({
         ? `Selezione: ${rows.length} / ${displayed.length} filtrati`
         : `Righe: ${rows.length}`,
     ].filter(Boolean);
-    const csv = buildCommercialistaCsv(rows, accounts, {
+    const csv = buildCommercialistaCsv(rows, accountsDisplay, {
       note: noteParts.join(" · "),
     });
     downloadTextFile(commercialistaCsvFilename("dashboard_movimenti"), csv);
@@ -376,7 +419,7 @@ export default function DashboardClient({
     dateRange,
     activeQuery,
     headerQuery,
-    accounts,
+    accountsDisplay,
   ]);
 
   const periodHeading = useMemo(
@@ -389,13 +432,16 @@ export default function DashboardClient({
   // liquido sui conti (esclusi pocket), indipendente dal periodo.
   const summary = useMemo(() => {
     const base = computeMonthlySummary(displayed);
-    if (accounts.length > 0) {
-      return { ...base, balance: computeAccountsTotal(accounts) };
+    if (accountsDisplay.length > 0) {
+      return { ...base, balance: computeAccountsTotal(accountsDisplay) };
     }
     return base;
-  }, [displayed, accounts]);
+  }, [displayed, accountsDisplay]);
 
-  const pocketBalance = useMemo(() => computePocketTotal(accounts), [accounts]);
+  const pocketBalance = useMemo(
+    () => computePocketTotal(accountsDisplay),
+    [accountsDisplay]
+  );
 
   // Fetch del periodo precedente per calcolare il delta % delle card.
   // Se l'utente non ha selezionato un range, usiamo come "corrente" il mese
@@ -1468,7 +1514,7 @@ export default function DashboardClient({
       />
 
       <AccountsSection
-        accounts={accounts}
+        accounts={accountsDisplay}
         loading={loadingAccounts}
         onAdd={() => setConnectOpen(true)}
         onSync={handleSync}
@@ -1512,7 +1558,7 @@ export default function DashboardClient({
       </div>
 
       <AddTransaction
-        accounts={accounts}
+        accounts={accountsDisplay}
         tagSuggestions={distinctTagSuggestions}
       />
 
@@ -1540,7 +1586,7 @@ export default function DashboardClient({
 
       <BulkActionsBar
         count={selectedIds.size}
-        accounts={accounts}
+        accounts={accountsDisplay}
         busy={bulkBusy}
         onClear={clearSelection}
         onRecategorize={handleBulkRecategorize}
@@ -1556,7 +1602,7 @@ export default function DashboardClient({
 
       <EditTransactionModal
         transaction={editing}
-        accounts={accounts}
+        accounts={accountsDisplay}
         tagSuggestions={distinctTagSuggestions}
         onClose={() => setEditing(null)}
         onSave={handleSave}

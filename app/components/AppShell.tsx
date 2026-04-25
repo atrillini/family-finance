@@ -2,6 +2,7 @@
 
 import { usePathname } from "next/navigation";
 import Sidebar from "./Sidebar";
+import MobileNav from "./MobileNav";
 import QuickCashExpense from "./QuickCashExpense";
 
 function isAuthPage(pathname: string): boolean {
@@ -30,7 +31,8 @@ export default function AppShell({
   return (
     <div className="flex min-h-screen">
       <Sidebar />
-      <main className="flex-1 min-w-0">{children}</main>
+      <MobileNav />
+      <main className="flex-1 min-w-0 pt-[4.25rem] md:pt-0">{children}</main>
       <QuickCashExpense />
     </div>
   );

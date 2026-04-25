@@ -6,7 +6,7 @@ import { toast } from "sonner";
 import {
   CASH_WALLET_NAME,
   dispatchRefetchAccounts,
-  extractCashExpenseAmount,
+  parseCashExpenseLine,
 } from "@/lib/cash-wallet";
 import { getSupabaseClient, isSupabaseConfigured } from "@/lib/supabase";
 import type { TransactionAnalysis } from "@/lib/gemini";
@@ -63,13 +63,14 @@ export default function QuickCashExpense() {
         return;
       }
 
-      const amount = extractCashExpenseAmount(raw);
-      if (amount == null) {
+      const parsed = parseCashExpenseLine(raw);
+      if (!parsed) {
         toast.error(
           "Non trovo un importo. Prova ad esempio: «20 pizza» o «15,50 € caffè»."
         );
         return;
       }
+      const { amount, description: cleanDescription } = parsed;
 
       setPhase("ensuring");
       try {
@@ -90,7 +91,7 @@ export default function QuickCashExpense() {
         const catRes = await fetch("/api/categorize", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ description: raw }),
+          body: JSON.stringify({ description: cleanDescription }),
         });
         const catData = (await catRes.json()) as Partial<TransactionAnalysis> & {
           error?: string;
@@ -124,7 +125,7 @@ export default function QuickCashExpense() {
           : new Date().toISOString();
 
         const { error: insErr } = await supabase.from("transactions").insert({
-          description: raw,
+          description: cleanDescription,
           merchant: analysis.merchant?.trim() || null,
           category: analysis.category,
           amount: signed,

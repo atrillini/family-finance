@@ -136,6 +136,22 @@ export type Json =
  * Notifiche in-app (campanella header) — vedi anche
  * `supabase/migrations/20260422190000_notifications.sql`
  */
+/** Posizione investimento inserita a mano (tabella `manual_investments`). */
+export type ManualInvestmentRow = {
+  id: string;
+  user_id: string;
+  name: string;
+  instrument_type: string;
+  quantity: number | null;
+  avg_price: number | null;
+  current_value: number;
+  /** ISIN opzionale (valorizzazione quotazione Twelve Data). */
+  isin: string | null;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
 export type AccountRow = {
   id: string;
   user_id: string | null;
@@ -366,6 +382,31 @@ export type Database = {
           user_id?: string;
         };
         Update: Partial<CategorizationRuleRow>;
+        Relationships: [];
+      };
+      manual_investments: {
+        Row: ManualInvestmentRow;
+        Insert: Omit<
+          ManualInvestmentRow,
+          "id" | "created_at" | "updated_at"
+        > & {
+          id?: string;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<
+          Pick<
+            ManualInvestmentRow,
+            | "name"
+            | "instrument_type"
+            | "quantity"
+            | "avg_price"
+            | "current_value"
+            | "isin"
+            | "notes"
+            | "updated_at"
+          >
+        >;
         Relationships: [];
       };
       accounts: {
