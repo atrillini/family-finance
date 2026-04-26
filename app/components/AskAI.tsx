@@ -11,6 +11,7 @@ import {
 import ReactMarkdown from "react-markdown";
 import type { FinanceTx } from "@/lib/gemini";
 import type { Transaction } from "@/lib/mock-data";
+import { isTransactionVisible } from "@/lib/transaction-visibility";
 import {
   formatRangeLabel,
   rangeToIsoBounds,
@@ -51,7 +52,9 @@ export default function AskAI({ transactions, dateRange = null }: AskAIProps) {
 
     setStatus({ kind: "loading" });
 
-    const payload: FinanceTx[] = transactions.map((t) => ({
+    const payload: FinanceTx[] = transactions
+      .filter((t) => isTransactionVisible(t))
+      .map((t) => ({
       description: t.description,
       amount: t.amount,
       category: t.category,

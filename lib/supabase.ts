@@ -219,6 +219,8 @@ export type TransactionRow = {
    * falserebbero le statistiche mensili.
    */
   is_transfer: boolean;
+  /** Soft delete: nascosta da UI/analisi; resta in DB per dedup GoCardless. */
+  is_hidden: boolean;
   account_id: string | null;
   external_id: string | null;
   created_at: string;
@@ -313,6 +315,7 @@ export type Database = {
           | "data_quality"
           | "payload_hash"
           | "bank_pending"
+          | "is_hidden"
         > & {
           id?: string;
           date?: string;
@@ -320,6 +323,7 @@ export type Database = {
           tags?: string[];
           is_subscription?: boolean;
           is_transfer?: boolean;
+          is_hidden?: boolean;
           account_id?: string | null;
           external_id?: string | null;
           user_id?: string | null;

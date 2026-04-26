@@ -132,6 +132,7 @@ export default function QuickCashExpense() {
           tags,
           is_subscription: analysis.is_subscription,
           is_transfer: analysis.is_transfer,
+          is_hidden: false,
           account_id: accountId,
           user_id: user.id,
           date: dateIso,

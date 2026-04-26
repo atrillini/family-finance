@@ -153,6 +153,7 @@ export default function AddTransaction({
           tags: mergedTags,
           is_subscription: finalAnalysis?.is_subscription ?? false,
           is_transfer: finalAnalysis?.is_transfer ?? false,
+          is_hidden: false,
           account_id: accountId || null,
           user_id: user.id,
         });

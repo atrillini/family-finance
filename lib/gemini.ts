@@ -572,13 +572,18 @@ export async function analyzeFinance(
   const cleaned = userQuery?.trim();
   if (!cleaned) return "";
 
+  // Record estesi (es. da client che serializza `Transaction`) con soft delete.
+  const visible = transactions.filter(
+    (t) => (t as unknown as { is_hidden?: boolean }).is_hidden !== true
+  );
+
   const todayIT = new Intl.DateTimeFormat("it-IT", {
     day: "numeric",
     month: "long",
     year: "numeric",
   }).format(new Date());
 
-  const summary = transactions.slice(0, 200).map((t) => ({
+  const summary = visible.slice(0, 200).map((t) => ({
     description: t.description,
     amount: Number(t.amount),
     category: t.category,

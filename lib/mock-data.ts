@@ -59,6 +59,7 @@ export const MOCK_ACCOUNTS: Account[] = [
 const MOCK_TX_DEFAULTS = {
   external_id: null,
   is_transfer: false,
+  is_hidden: false,
   user_id: null,
   bank_payload: null,
   parser_version: "1",

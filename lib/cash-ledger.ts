@@ -16,6 +16,7 @@ export async function fetchCashLedgerTotals(
   const { data, error } = await supabase
     .from("transactions")
     .select("account_id, amount")
+    .eq("is_hidden", false)
     .in("account_id", accountIds);
 
   if (error) throw error;

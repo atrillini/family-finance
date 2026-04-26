@@ -63,6 +63,7 @@ import {
 } from "@/lib/categorization-learning-utils";
 import { dateRangeFromIso } from "@/lib/default-month-range";
 import { fetchTransactionsBatched } from "@/lib/supabase-transactions-batched";
+import { isTransactionVisible } from "@/lib/transaction-visibility";
 import {
   buildCommercialistaCsv,
   commercialistaCsvFilename,
@@ -190,6 +191,7 @@ export default function TransactionsClient({
           setTransactions((prev) => {
             if (payload.eventType === "INSERT") {
               const row = payload.new as Transaction;
+              if (!isTransactionVisible(row)) return prev;
               if (activeQuery && !rowMatchesFilter(row, activeQuery.filter)) {
                 return prev;
               }
@@ -199,6 +201,9 @@ export default function TransactionsClient({
             }
             if (payload.eventType === "UPDATE") {
               const row = payload.new as Transaction;
+              if (!isTransactionVisible(row)) {
+                return prev.filter((p) => p.id !== row.id);
+              }
               const outOfFilter =
                 (activeQuery && !rowMatchesFilter(row, activeQuery.filter)) ||
                 (dateRange && !isDateInRange(row.date, dateRange));
@@ -525,15 +530,16 @@ export default function TransactionsClient({
         const supabase = getSupabaseClient();
         const { error, count, data } = await supabase
           .from("transactions")
-          .delete({ count: "exact" })
+          .update({ is_hidden: true }, { count: "exact" })
           .eq("id", id)
+          .eq("is_hidden", false)
           .select("id");
         if (error) throw error;
         const touched = count ?? data?.length ?? 0;
-        console.info("[transazioni/delete]", { id, touched });
+        console.info("[transazioni/soft-hide]", { id, touched });
         if (touched === 0) {
           throw new Error(
-            "La transazione non è stata eliminata dal database. Controlla le policy RLS su public.transactions (serve una policy DELETE sulla anon key)."
+            "La transazione non è stata nascosta. Controlla le policy RLS UPDATE su public.transactions."
           );
         }
       } catch (err) {
@@ -542,13 +548,13 @@ export default function TransactionsClient({
         toast.error(
           err instanceof Error
             ? err.message
-            : "Impossibile eliminare la transazione."
+            : "Impossibile nascondere la transazione."
         );
       }
     };
 
-    toast(`Transazione "${victim.description}" eliminata`, {
-      description: "Verrà rimossa in via definitiva tra pochi secondi.",
+    toast(`Transazione "${victim.description}" nascosta`, {
+      description: "Sparirà dall'elenco tra pochi secondi (puoi annullare).",
       duration: 5000,
       action: {
         label: "Annulla",
@@ -747,17 +753,18 @@ export default function TransactionsClient({
         const supabase = getSupabaseClient();
         const { error, count } = await supabase
           .from("transactions")
-          .delete({ count: "exact" })
-          .in("id", ids);
+          .update({ is_hidden: true }, { count: "exact" })
+          .in("id", ids)
+          .eq("is_hidden", false);
         if (error) throw error;
         if ((count ?? 0) === 0) {
           throw new Error(
-            "Nessuna riga eliminata: probabile RLS. Verifica le policy DELETE su public.transactions."
+            "Nessuna riga nascosta: probabile RLS. Verifica le policy UPDATE su public.transactions."
           );
         }
       } catch (err) {
         restore();
-        toast.error("Eliminazione massiva fallita", {
+        toast.error("Impossibile nascondere le transazioni", {
           description: err instanceof Error ? err.message : String(err),
         });
       } finally {
@@ -765,8 +772,8 @@ export default function TransactionsClient({
       }
     };
 
-    toast(`${victims.length} transazioni eliminate`, {
-      description: "Annulla entro pochi secondi per ripristinarle.",
+    toast(`${victims.length} transazioni nascoste`, {
+      description: "Annulla entro pochi secondi per ripristinarle in elenco.",
       duration: 6000,
       action: {
         label: "Annulla",

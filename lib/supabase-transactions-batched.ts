@@ -21,7 +21,7 @@ export async function fetchTransactionsBatched(
   let offset = 0;
   for (;;) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    let q: any = supabase.from("transactions").select("*");
+    let q: any = supabase.from("transactions").select("*").eq("is_hidden", false);
     if (options.dateFromIso) q = q.gte("date", options.dateFromIso);
     if (options.dateToIso) q = q.lte("date", options.dateToIso);
     if (options.modify) q = options.modify(q);

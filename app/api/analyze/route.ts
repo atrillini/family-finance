@@ -64,6 +64,7 @@ export async function POST(request: Request) {
   const rawTxs = Array.isArray(body.transactions) ? body.transactions : [];
   const transactions: FinanceTx[] = rawTxs
     .filter((t): t is Record<string, unknown> => !!t && typeof t === "object")
+    .filter((t) => (t as { is_hidden?: unknown }).is_hidden !== true)
     .map((t) => coerceFinanceTxFromJson(t));
 
   let context: AnalyzeContext | undefined;
