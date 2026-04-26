@@ -145,11 +145,29 @@ export type ManualInvestmentRow = {
   quantity: number | null;
   avg_price: number | null;
   current_value: number;
+  /** Bonus fedeltà stimato (es. Mediolanum), non da API bancarie. */
+  bonus_amount: number;
+  /** Scadenza vincolo per maturazione bonus. */
+  maturity_date: string | null;
+  /** ISIN di tracciamento (allineato a `isin` in app). */
+  isin_code: string | null;
   /** ISIN opzionale (valorizzazione quotazione Twelve Data). */
   isin: string | null;
+  /** True se gestita principalmente a mano. */
+  is_manual: boolean;
   notes: string | null;
   created_at: string;
   updated_at: string;
+};
+
+/** Storico importi bonus registrati manualmente per una posizione. */
+export type BonusHistoryRow = {
+  id: string;
+  user_id: string;
+  manual_investment_id: string;
+  bonus_amount: number;
+  source_note: string | null;
+  created_at: string;
 };
 
 export type AccountRow = {
@@ -392,11 +410,19 @@ export type Database = {
         Row: ManualInvestmentRow;
         Insert: Omit<
           ManualInvestmentRow,
-          "id" | "created_at" | "updated_at"
+          | "id"
+          | "created_at"
+          | "updated_at"
+          | "bonus_amount"
+          | "is_manual"
         > & {
           id?: string;
           created_at?: string;
           updated_at?: string;
+          /** Default DB: 0 */
+          bonus_amount?: number;
+          /** Default DB: true */
+          is_manual?: boolean;
         };
         Update: Partial<
           Pick<
@@ -406,10 +432,25 @@ export type Database = {
             | "quantity"
             | "avg_price"
             | "current_value"
+            | "bonus_amount"
+            | "maturity_date"
             | "isin"
+            | "isin_code"
+            | "is_manual"
             | "notes"
             | "updated_at"
           >
+        >;
+        Relationships: [];
+      };
+      bonus_history: {
+        Row: BonusHistoryRow;
+        Insert: Omit<BonusHistoryRow, "id" | "created_at"> & {
+          id?: string;
+          created_at?: string;
+        };
+        Update: Partial<
+          Pick<BonusHistoryRow, "bonus_amount" | "source_note" | "created_at">
         >;
         Relationships: [];
       };
