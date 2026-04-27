@@ -1,6 +1,13 @@
 import { NextResponse } from "next/server";
 
-import { verifyCronRequest } from "@/lib/cron-auth";
+import {
+  isAnyCronAuthConfigured,
+  verifyCronRequest,
+} from "@/lib/cron-auth";
+import {
+  type CronSyncCheckpointPayload,
+  writeCronSyncCheckpoint,
+} from "@/lib/cron-sync-checkpoint";
 import { isGoCardlessConfigured } from "@/lib/gocardless";
 import {
   getSupabaseAdminClient,
@@ -11,12 +18,16 @@ import { syncTransactions } from "@/lib/sync-transactions";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-/** Limite massimo durata funzione (richiede piano Vercel che supporti valori alti). */
-export const maxDuration = 300;
+/**
+ * Limite d’esecuzione Vercel: resta sotto al timeout rete (504).
+ * Il lavoro utile si ferma prima con `CRON_SYNC_BUDGET_MS` − riserva.
+ */
+export const maxDuration = 60;
 
 /**
- * Quanti account processare per esecuzione cron (evita timeout + rate limit).
- * Le altre righe eligible verranno coperte ai run successivi (priorità a chi synca meno).
+ * Quanti account processare per esecuzione cron (evita rate limit).
+ * Le altre righe eligibili verranno coperte ai run successivi (ordinamento per
+ * `last_sync_at` crescente: prima chi è più indietro).
  */
 const DEFAULT_MAX_ACCOUNTS_PER_RUN = 8;
 
@@ -36,6 +47,25 @@ function parseMaxAccounts(): number {
   return DEFAULT_MAX_ACCOUNTS_PER_RUN;
 }
 
+/**
+ * Durata lavoro utile (sincro account) in ms. Default 50s meno una riserva per
+ * risposta + scrittura checkpoint su Supabase, così Vercel non restituisce 504.
+ */
+function parseWorkBudgetMs(): { budgetMs: number; reserveMs: number; workMs: number } {
+  const rawB = process.env.CRON_SYNC_BUDGET_MS?.trim();
+  const budgetMs =
+    Number.isFinite(Number(rawB)) && Number(rawB) >= 5_000
+      ? Math.min(Number(rawB), 300_000)
+      : 50_000;
+  const rawR = process.env.CRON_SYNC_RESERVE_MS?.trim();
+  const reserveMs =
+    Number.isFinite(Number(rawR)) && Number(rawR) >= 0
+      ? Math.min(Number(rawR), 20_000)
+      : 2_000;
+  const workMs = Math.max(3_000, budgetMs - reserveMs);
+  return { budgetMs, reserveMs, workMs };
+}
+
 function sortAccountsForCron(a: CronAccountRow, b: CronAccountRow): number {
   if (!a.last_sync_at && !b.last_sync_at) return 0;
   if (!a.last_sync_at) return -1;
@@ -45,12 +75,21 @@ function sortAccountsForCron(a: CronAccountRow, b: CronAccountRow): number {
   );
 }
 
+type OneResult = {
+  accountId: string;
+  accountName: string;
+  userId: string;
+  ok: boolean;
+  report?: Awaited<ReturnType<typeof syncTransactions>>;
+  error?: string;
+};
+
 async function runCron(request: Request) {
-  if (!process.env.CRON_SECRET?.trim()) {
+  if (!isAnyCronAuthConfigured()) {
     return NextResponse.json(
       {
         error:
-          "CRON_SECRET non configurato. Imposta la variabile in Vercel → Environment Variables.",
+          "Configurare almeno CRON_SECRET (Vercel Cron) e/o CRON_EXTERNAL_KEY (cron esterno) in Vercel → Environment Variables.",
       },
       { status: 500 }
     );
@@ -77,8 +116,10 @@ async function runCron(request: Request) {
     );
   }
 
+  const { workMs, budgetMs, reserveMs } = parseWorkBudgetMs();
   const maxAccounts = parseMaxAccounts();
   const admin = getSupabaseAdminClient();
+  const tAll = Date.now();
 
   const { data: rows, error: qErr } = await admin
     .from("accounts")
@@ -100,19 +141,49 @@ async function runCron(request: Request) {
   eligible.sort(sortAccountsForCron);
   const batch = eligible.slice(0, maxAccounts);
 
-  const results: Array<{
-    accountId: string;
-    accountName: string;
-    userId: string;
-    ok: boolean;
-    report?: Awaited<ReturnType<typeof syncTransactions>>;
-    error?: string;
-  }> = [];
+  const accountIdsCompleted: string[] = [];
+  const results: OneResult[] = [];
+  let stoppedByTimeout = false;
 
-  for (const acc of batch) {
+  if (batch.length === 0) {
+    const payload: CronSyncCheckpointPayload = {
+      version: 1,
+      lastRunAt: new Date().toISOString(),
+      durationMs: Date.now() - tAll,
+      reason: "no_accounts",
+      eligibleTotal: eligible.length,
+      maxAccountsPerRun: maxAccounts,
+      batchPlanned: 0,
+      accountIdsCompleted: [],
+      accountIdsSkippedByBudget: [],
+      resultsSummary: [],
+    };
+    await writeCronSyncCheckpoint(admin, payload);
+    return NextResponse.json({
+      ok: true,
+      processed: 0,
+      eligibleTotal: eligible.length,
+      truncated: false,
+      maxAccountsPerRun: maxAccounts,
+      workBudgetMs: workMs,
+      wallBudgetMs: budgetMs,
+      reserveMs,
+      results,
+      message: "Nessun conto con GoCardless da sincronizzare.",
+    });
+  }
+
+  const t0 = Date.now();
+  for (let i = 0; i < batch.length; i++) {
+    if (Date.now() - t0 >= workMs) {
+      stoppedByTimeout = true;
+      break;
+    }
+    const acc = batch[i]!;
     const userId = acc.user_id as string;
     try {
       const report = await syncTransactions(acc.id, admin, userId);
+      accountIdsCompleted.push(acc.id);
       results.push({
         accountId: acc.id,
         accountName: acc.name,
@@ -123,6 +194,7 @@ async function runCron(request: Request) {
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);
       console.error(`[cron/sync] account ${acc.id}:`, message);
+      accountIdsCompleted.push(acc.id);
       results.push({
         accountId: acc.id,
         accountName: acc.name,
@@ -133,22 +205,57 @@ async function runCron(request: Request) {
     }
   }
 
+  const skipped = stoppedByTimeout
+    ? batch.filter((a) => !accountIdsCompleted.includes(a.id))
+    : [];
+  const skippedIds = skipped.map((a) => a.id);
+  const duration = Date.now() - tAll;
+
+  const reason: CronSyncCheckpointPayload["reason"] = stoppedByTimeout
+    ? "timeout"
+    : "complete";
+
+  await writeCronSyncCheckpoint(admin, {
+    version: 1,
+    lastRunAt: new Date().toISOString(),
+    durationMs: duration,
+    reason,
+    eligibleTotal: eligible.length,
+    maxAccountsPerRun: maxAccounts,
+    batchPlanned: batch.length,
+    accountIdsCompleted,
+    accountIdsSkippedByBudget: skippedIds,
+    resultsSummary: results.map((r) => ({
+      accountId: r.accountId,
+      accountName: r.accountName,
+      userId: r.userId,
+      ok: r.ok,
+      error: r.error,
+    })),
+  });
+
   return NextResponse.json({
     ok: true,
-    processed: batch.length,
+    stoppedByTimeout,
+    processed: results.length,
+    skippedDueToTimeBudget: skipped.length,
     eligibleTotal: eligible.length,
     truncated: eligible.length > maxAccounts,
     maxAccountsPerRun: maxAccounts,
+    workBudgetMs: workMs,
+    wallBudgetMs: budgetMs,
+    reserveMs,
+    durationMs: duration,
     results,
   });
 }
 
-/** Vercel Cron invoca la route con GET. */
+/** Vercel Cron o cron esterno: GET. */
 export async function GET(request: Request) {
   return runCron(request);
 }
 
-/** Utile per test manuali (curl POST) con lo stesso header Authorization. */
+/** Test manuale (es. curl POST) con gli stessi header. */
 export async function POST(request: Request) {
   return runCron(request);
 }

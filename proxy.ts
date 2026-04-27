@@ -82,7 +82,7 @@ export async function proxy(request: NextRequest) {
     const path = request.nextUrl.pathname;
 
     if (!user && !isPublicPath(path)) {
-      /** Cron Vercel: niente cookie sessione; accesso solo con Bearer CRON_SECRET */
+      /** Cron: niente cookie; accesso con Bearer CRON_SECRET o header x-cron-key (CRON_EXTERNAL_KEY) */
       if (path.startsWith("/api/cron/")) {
         if (verifyCronRequest(request)) {
           return response;

@@ -454,6 +454,24 @@ export type Database = {
         >;
         Relationships: [];
       };
+      /** Singleton `id = "singleton"`: ultimo run `/api/cron/sync` (solo service role). */
+      cron_sync_state: {
+        Row: {
+          id: string;
+          updated_at: string;
+          payload: Json;
+        };
+        Insert: {
+          id: "singleton";
+          updated_at?: string;
+          payload?: Json;
+        };
+        Update: Partial<{
+          updated_at: string;
+          payload: Json;
+        }>;
+        Relationships: [];
+      };
       accounts: {
         Row: AccountRow;
         Insert: Omit<
