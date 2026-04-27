@@ -31,6 +31,11 @@ import {
   maturityProgressForRow,
   sumInvestmentCountervalues,
 } from "@/lib/manual-investment-totals";
+import {
+  parseStrictDecimal,
+  parseStrictDecimalUnbounded,
+  parseStrictIntYears,
+} from "@/lib/strict-decimal";
 
 const INSTRUMENT_TYPES = [
   "Fondo",
@@ -87,6 +92,18 @@ export default function InvestimentiClient() {
   );
   const [bonusModalValue, setBonusModalValue] = useState("");
   const [bonusModalSaving, setBonusModalSaving] = useState(false);
+  const [positionModalOpen, setPositionModalOpen] = useState(false);
+  const [formFieldErrors, setFormFieldErrors] = useState<
+    Partial<Record<keyof FormState | "general", string>>
+  >({});
+
+  const dismissFormFieldError = (key: keyof FormState | "general") => {
+    setFormFieldErrors((fe) => {
+      const n = { ...fe };
+      delete n[key];
+      return n;
+    });
+  };
 
   const [includeLiquidity, setIncludeLiquidity] = useState(false);
   const [annualPct, setAnnualPct] = useState("4");
@@ -190,35 +207,109 @@ export default function InvestimentiClient() {
     [rows]
   );
 
-  const scenario = useMemo(() => {
-    const years = Number(horizonYears);
-    const pct = Number(annualPct.replace(",", "."));
-    const pmt = Number(monthlyContrib.replace(",", "."));
-    return computeInvestmentScenario({
-      startingPrincipal: scenarioPrincipal,
-      annualReturnPct: Number.isFinite(pct) ? pct : 0,
-      monthlyContribution: Number.isFinite(pmt) ? pmt : 0,
-      horizonYears: Number.isFinite(years) ? years : 10,
+  const { scenario, projectionErrors, projectionNarrateFields } = useMemo(() => {
+    const err: string[] = [];
+    const pctP = parseStrictDecimalUnbounded(annualPct, {
+      label: "Rendimento annuo (%)",
+      allowEmpty: true,
     });
+    const pmtP = parseStrictDecimalUnbounded(monthlyContrib, {
+      label: "Versamento mensile (€)",
+      allowEmpty: true,
+    });
+    const yP = parseStrictIntYears(horizonYears, {
+      label: "Orizzonte (anni)",
+      min: 1,
+      max: 40,
+    });
+    if (!pctP.ok) err.push(pctP.message);
+    if (!pmtP.ok) err.push(pmtP.message);
+    if (!yP.ok) err.push(yP.message);
+    if (err.length || !pctP.ok || !pmtP.ok || !yP.ok) {
+      return {
+        scenario: null,
+        projectionErrors: err,
+        projectionNarrateFields: null,
+      };
+    }
+    const annualReturnPct =
+      pctP.value == null && !annualPct.trim() ? 0 : (pctP.value ?? 0);
+    const monthlyContribution =
+      pmtP.value == null && !monthlyContrib.trim() ? 0 : (pmtP.value ?? 0);
+    const scen = computeInvestmentScenario({
+      startingPrincipal: scenarioPrincipal,
+      annualReturnPct,
+      monthlyContribution,
+      horizonYears: yP.value,
+    });
+    return {
+      scenario: scen,
+      projectionErrors: [] as string[],
+      projectionNarrateFields: {
+        annualReturnPct,
+        monthlyContribution,
+        horizonYears: yP.value,
+      },
+    };
   }, [scenarioPrincipal, annualPct, monthlyContrib, horizonYears]);
 
   async function onSave(e: React.FormEvent) {
     e.preventDefault();
     if (!configured) return;
     const name = form.name.trim();
-    const cv = Number(form.current_value.replace(",", "."));
-    if (!name || !Number.isFinite(cv) || cv < 0) return;
+    setFormFieldErrors({});
+    setError(null);
+
+    const fe: Partial<Record<keyof FormState | "general", string>> = {};
+    if (!name) {
+      fe.name = "Inserisci un nome per la posizione (es. il nome del fondo o del titolo).";
+    }
+    const cvP = parseStrictDecimal(form.current_value, {
+      label: "Valore titoli (€)",
+      required: true,
+      min: 0,
+      allowNullWhenEmpty: false,
+    });
+    if (!cvP.ok) fe.current_value = cvP.message;
+    const bonusP = parseStrictDecimal(form.bonus_amount, {
+      label: "Bonus stimato (€)",
+      required: false,
+      min: 0,
+      allowNullWhenEmpty: true,
+    });
+    if (!bonusP.ok) fe.bonus_amount = bonusP.message;
+    const qtyP = parseStrictDecimal(form.quantity, {
+      label: "Quantità",
+      required: false,
+      min: 0,
+      allowNullWhenEmpty: true,
+    });
+    if (!qtyP.ok) fe.quantity = qtyP.message;
+    const apP = parseStrictDecimal(form.avg_price, {
+      label: "Prezzo medio (€)",
+      required: false,
+      min: 0,
+      allowNullWhenEmpty: true,
+    });
+    if (!apP.ok) fe.avg_price = apP.message;
     const isinTrim = form.isin.trim().toUpperCase();
     if (isinTrim && !normalizeIsin(isinTrim)) {
-      setError("ISIN non valido (12 caratteri, es. IE00B4L5Y983).");
+      fe.isin = "ISIN non valido: servono 12 caratteri alfanumerici (es. IE00B4L5Y983).";
+    }
+    if (Object.keys(fe).length > 0) {
+      setFormFieldErrors(fe);
       return;
     }
-    const qty = form.quantity.trim()
-      ? Number(form.quantity.replace(",", "."))
-      : null;
-    const ap = form.avg_price.trim()
-      ? Number(form.avg_price.replace(",", "."))
-      : null;
+    if (!cvP.ok || !bonusP.ok || !qtyP.ok || !apP.ok) return;
+    if (!name) return;
+
+    const cv = cvP.value!;
+    const bonus_amount =
+      bonusP.value == null && !form.bonus_amount.trim()
+        ? 0
+        : (bonusP.value ?? 0);
+    const qty = qtyP.value;
+    const ap = apP.value;
     setSaving(true);
     setError(null);
     try {
@@ -227,9 +318,6 @@ export default function InvestimentiClient() {
       const uid = auth.user?.id;
       if (!uid) throw new Error("Sessione non valida.");
 
-      const bonusNum = Number(form.bonus_amount.replace(",", "."));
-      const bonus_amount =
-        Number.isFinite(bonusNum) && bonusNum >= 0 ? bonusNum : 0;
       const matTrim = form.maturity_date.trim();
       const maturity_date = matTrim ? matTrim.slice(0, 10) : null;
       const isinNorm = isinTrim ? normalizeIsin(isinTrim) : null;
@@ -261,7 +349,7 @@ export default function InvestimentiClient() {
           .insert({ ...payload, user_id: uid });
         if (insErr) throw insErr;
       }
-      setForm(emptyForm());
+      closePositionModal();
       await reload();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Salvataggio non riuscito.");
@@ -280,7 +368,9 @@ export default function InvestimentiClient() {
         .delete()
         .eq("id", id);
       if (delErr) throw delErr;
-      if (form.id === id) setForm(emptyForm());
+      if (form.id === id) {
+        closePositionModal();
+      }
       await reload();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Eliminazione non riuscita.");
@@ -320,6 +410,46 @@ export default function InvestimentiClient() {
     });
   }
 
+  function openAddPositionModal() {
+    setQuoteHint(null);
+    setForm(emptyForm());
+    setFormFieldErrors({});
+    setError(null);
+    setPositionModalOpen(true);
+  }
+
+  function openEditPositionModal(r: ManualInvestmentRow) {
+    onEdit(r);
+    setFormFieldErrors({});
+    setError(null);
+    setPositionModalOpen(true);
+  }
+
+  function closePositionModal() {
+    setPositionModalOpen(false);
+    setFormFieldErrors({});
+    setQuoteHint(null);
+    setError(null);
+    setForm(emptyForm());
+  }
+
+  useEffect(() => {
+    if (!positionModalOpen) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        closePositionModal();
+      }
+    }
+    window.addEventListener("keydown", onKey);
+    return () => {
+      document.body.style.overflow = prev;
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [positionModalOpen]);
+
   function openBonusModal(r: ManualInvestmentRow) {
     setBonusModalRow(r);
     setBonusModalValue(
@@ -336,15 +466,22 @@ export default function InvestimentiClient() {
     setBonusModalRow(null);
     setBonusModalValue("");
     setBonusModalSaving(false);
+    setError(null);
   }
 
   async function onSaveBonusFromModal() {
     if (!configured || !bonusModalRow) return;
-    const v = Number(bonusModalValue.replace(",", "."));
-    if (!Number.isFinite(v) || v < 0) {
-      setError("Inserisci un importo bonus valido (≥ 0).");
+    const parsed = parseStrictDecimal(bonusModalValue, {
+      label: "Importo bonus (€)",
+      required: true,
+      min: 0,
+      allowNullWhenEmpty: false,
+    });
+    if (!parsed.ok) {
+      setError(parsed.message);
       return;
     }
+    const v = parsed.value!;
     setBonusModalSaving(true);
     setError(null);
     try {
@@ -377,16 +514,24 @@ export default function InvestimentiClient() {
   }
 
   async function fetchIsinQuoteBody(isin: string, quantityStr: string) {
-    const qty = quantityStr.trim()
-      ? Number(quantityStr.replace(",", "."))
-      : null;
+    let quantity: number | undefined;
+    if (quantityStr.trim()) {
+      const qP = parseStrictDecimal(quantityStr, {
+        label: "Quantità",
+        required: true,
+        min: 0,
+        allowNullWhenEmpty: false,
+      });
+      if (!qP.ok) throw new Error(qP.message);
+      const q = qP.value ?? 0;
+      if (q > 0) quantity = q;
+    }
     const res = await fetch("/api/investments/isin-quote", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         isin,
-        quantity:
-          qty != null && Number.isFinite(qty) && qty > 0 ? qty : undefined,
+        quantity,
       }),
     });
     const json = (await res.json()) as {
@@ -491,7 +636,7 @@ export default function InvestimentiClient() {
   }
 
   async function requestNarrative() {
-    if (!scenario) return;
+    if (!scenario || !projectionNarrateFields) return;
     setNarrativeBusy(true);
     setNarrative(null);
     setNarrativeSource(null);
@@ -501,9 +646,7 @@ export default function InvestimentiClient() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           startingPrincipal: scenarioPrincipal,
-          annualReturnPct: Number(annualPct.replace(",", ".")) || 0,
-          monthlyContribution: Number(monthlyContrib.replace(",", ".")) || 0,
-          horizonYears: Number(horizonYears) || 10,
+          ...projectionNarrateFields,
           endValue: scenario.endValue,
           totalContributions: scenario.totalContributions,
           marketComponent: scenario.marketComponent,
@@ -552,7 +695,7 @@ export default function InvestimentiClient() {
         </div>
       ) : null}
 
-      {error ? (
+      {error && !positionModalOpen && !bonusModalRow ? (
         <div className="card-surface flex items-start gap-3 border-[color:var(--color-expense)]/30 p-4 text-[13px] text-[color:var(--color-expense)]">
           <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
           <p>{error}</p>
@@ -599,10 +742,24 @@ export default function InvestimentiClient() {
                 autoFocus
                 inputMode="decimal"
                 value={bonusModalValue}
-                onChange={(e) => setBonusModalValue(e.target.value)}
+                onChange={(e) => {
+                  setBonusModalValue(e.target.value);
+                  setError(null);
+                }}
+                placeholder="es. 1500.00"
                 className="h-10 w-full rounded-xl border border-[color:var(--color-border)] bg-[color:var(--color-surface)] px-3 text-[14px] tabular-nums"
+                aria-describedby="bonus-modal-amount-hint"
               />
+              <p
+                id="bonus-modal-amount-hint"
+                className="text-[10px] text-[color:var(--color-muted-foreground)]"
+              >
+                Usa il punto per i decimali (es. 1500.50), non la virgola.
+              </p>
             </div>
+            {error ? (
+              <p className="text-[12px] text-[color:var(--color-expense)]">{error}</p>
+            ) : null}
             <div className="flex flex-wrap gap-2 pt-1">
               <button
                 type="button"
@@ -626,6 +783,311 @@ export default function InvestimentiClient() {
                 Annulla
               </button>
             </div>
+          </div>
+        </div>
+      ) : null}
+
+      {positionModalOpen ? (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="position-modal-title"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) closePositionModal();
+          }}
+        >
+          <div
+            className="card-surface relative max-h-[min(90vh,900px)] w-full max-w-2xl overflow-y-auto p-6 shadow-xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              type="button"
+              onClick={() => closePositionModal()}
+              disabled={saving}
+              className="absolute right-3 top-3 rounded-lg p-2 text-[color:var(--color-muted-foreground)] hover:bg-[color:var(--color-surface-muted)] disabled:opacity-50"
+              aria-label="Chiudi"
+            >
+              <X className="h-4 w-4" />
+            </button>
+            <h3
+              id="position-modal-title"
+              className="pr-10 text-[15px] font-semibold"
+            >
+              {form.id ? "Modifica posizione" : "Nuova posizione"}
+            </h3>
+            <p className="mt-1 text-[12px] leading-relaxed text-[color:var(--color-muted-foreground)]">
+              Indica almeno il <strong className="font-medium text-[color:var(--color-foreground)]">nome</strong> e il{" "}
+              <strong className="font-medium text-[color:var(--color-foreground)]">valore titoli attuale (€)</strong>.
+              Gli <strong>importi</strong> vanno inseriti con il{" "}
+              <strong>punto</strong> come separatore decimale (es. <code className="font-mono">15234.56</code>).
+            </p>
+            {error && positionModalOpen ? (
+              <div className="mt-3 flex items-start gap-2 rounded-lg border border-[color:var(--color-expense)]/30 bg-[color:var(--color-expense)]/5 p-3 text-[12px] text-[color:var(--color-expense)]">
+                <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+                <p>{error}</p>
+              </div>
+            ) : null}
+            <form
+              onSubmit={onSave}
+              className="mt-4 grid gap-3 sm:grid-cols-2"
+            >
+              <div className="sm:col-span-2 space-y-1">
+                <label className="text-[11px] font-medium text-[color:var(--color-muted-foreground)]">
+                  Nome
+                </label>
+                <input
+                  value={form.name}
+                  onChange={(e) => {
+                    dismissFormFieldError("name");
+                    setForm((f) => ({ ...f, name: e.target.value }));
+                  }}
+                  className={`h-10 w-full rounded-xl border bg-[color:var(--color-surface)] px-3 text-[14px] ${
+                    formFieldErrors.name
+                      ? "border-[color:var(--color-expense)]"
+                      : "border-[color:var(--color-border)]"
+                  }`}
+                  placeholder="es. MSCI World, BTp 2030…"
+                />
+                {formFieldErrors.name ? (
+                  <p className="text-[11px] text-[color:var(--color-expense)]">
+                    {formFieldErrors.name}
+                  </p>
+                ) : null}
+              </div>
+              <div className="sm:col-span-2 space-y-1">
+                <label className="text-[11px] font-medium text-[color:var(--color-muted-foreground)]">
+                  ISIN (opz., quotazione Twelve Data)
+                </label>
+                <div className="flex flex-wrap items-stretch gap-2">
+                  <input
+                    value={form.isin}
+                    onChange={(e) => {
+                      setQuoteHint(null);
+                      dismissFormFieldError("isin");
+                      setForm((f) => ({ ...f, isin: e.target.value }));
+                    }}
+                    spellCheck={false}
+                    autoCapitalize="characters"
+                    className={`h-10 min-w-[200px] flex-1 rounded-xl border bg-[color:var(--color-surface)] px-3 font-mono text-[13px] uppercase tracking-wide ${
+                      formFieldErrors.isin
+                        ? "border-[color:var(--color-expense)]"
+                        : "border-[color:var(--color-border)]"
+                    }`}
+                    placeholder="es. IE00B4L5Y983"
+                  />
+                  <button
+                    type="button"
+                    disabled={!configured || formQuoteBusy}
+                    onClick={() => void onQuoteFromForm()}
+                    className="inline-flex h-10 shrink-0 items-center gap-1.5 rounded-xl border border-[color:var(--color-border)] bg-[color:var(--color-surface-muted)] px-3 text-[12px] font-medium hover:bg-[color:var(--color-surface-muted)]/80 disabled:opacity-50"
+                  >
+                    {formQuoteBusy ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <RefreshCw className="h-3.5 w-3.5" />
+                    )}
+                    Aggiorna da mercato
+                  </button>
+                </div>
+                {formFieldErrors.isin ? (
+                  <p className="text-[11px] text-[color:var(--color-expense)]">
+                    {formFieldErrors.isin}
+                  </p>
+                ) : quoteHint ? (
+                  <p className="text-[11px] leading-snug text-[color:var(--color-muted-foreground)]">
+                    {quoteHint}
+                  </p>
+                ) : (
+                  <p className="text-[11px] text-[color:var(--color-muted-foreground)]">
+                    Con ISIN e quantità compilate: prezzo unitario × quantità per il
+                    valore attuale (di solito in EUR). Serve{" "}
+                    <code className="font-mono">TWELVE_DATA_API_KEY</code> sul server.
+                  </p>
+                )}
+              </div>
+              <div className="space-y-1">
+                <label className="text-[11px] font-medium text-[color:var(--color-muted-foreground)]">
+                  Tipo
+                </label>
+                <select
+                  value={form.instrument_type}
+                  onChange={(e) =>
+                    setForm((f) => ({ ...f, instrument_type: e.target.value }))
+                  }
+                  className="h-10 w-full rounded-xl border border-[color:var(--color-border)] bg-[color:var(--color-surface)] px-3 text-[14px]"
+                >
+                  {INSTRUMENT_TYPES.map((t) => (
+                    <option key={t} value={t}>
+                      {t}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="space-y-1">
+                <label className="text-[11px] font-medium text-[color:var(--color-muted-foreground)]">
+                  Valore titoli / attuale (€) <span className="text-[color:var(--color-expense)]">*</span>
+                </label>
+                <input
+                  inputMode="decimal"
+                  value={form.current_value}
+                  onChange={(e) => {
+                    dismissFormFieldError("current_value");
+                    setForm((f) => ({ ...f, current_value: e.target.value }));
+                  }}
+                  placeholder="es. 12500.00"
+                  className={`h-10 w-full rounded-xl border bg-[color:var(--color-surface)] px-3 text-[14px] tabular-nums ${
+                    formFieldErrors.current_value
+                      ? "border-[color:var(--color-expense)]"
+                      : "border-[color:var(--color-border)]"
+                  }`}
+                />
+                {formFieldErrors.current_value ? (
+                  <p className="text-[11px] text-[color:var(--color-expense)]">
+                    {formFieldErrors.current_value}
+                  </p>
+                ) : null}
+              </div>
+              <div className="space-y-1">
+                <label className="text-[11px] font-medium text-[color:var(--color-muted-foreground)]">
+                  Bonus fedeltà stimato (€)
+                </label>
+                <input
+                  inputMode="decimal"
+                  value={form.bonus_amount}
+                  onChange={(e) => {
+                    dismissFormFieldError("bonus_amount");
+                    setForm((f) => ({ ...f, bonus_amount: e.target.value }));
+                  }}
+                  className={`h-10 w-full rounded-xl border bg-[color:var(--color-surface)] px-3 text-[14px] tabular-nums ${
+                    formFieldErrors.bonus_amount
+                      ? "border-[color:var(--color-expense)]"
+                      : "border-[color:var(--color-border)]"
+                  }`}
+                />
+                {formFieldErrors.bonus_amount ? (
+                  <p className="text-[11px] text-[color:var(--color-expense)]">
+                    {formFieldErrors.bonus_amount}
+                  </p>
+                ) : null}
+                <p className="text-[10px] text-[color:var(--color-muted-foreground)]">
+                  Dall&apos;estratto; oppure &quot;Bonus&quot; in elenco per la cronologia
+                  dettagliata.
+                </p>
+              </div>
+              <div className="space-y-1">
+                <label className="text-[11px] font-medium text-[color:var(--color-muted-foreground)]">
+                  Scadenza vincolo bonus
+                </label>
+                <input
+                  type="date"
+                  value={form.maturity_date}
+                  onChange={(e) =>
+                    setForm((f) => ({ ...f, maturity_date: e.target.value }))
+                  }
+                  className="h-10 w-full rounded-xl border border-[color:var(--color-border)] bg-[color:var(--color-surface)] px-3 text-[14px]"
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="text-[11px] font-medium text-[color:var(--color-muted-foreground)]">
+                  Quantità (opz., decimale con <span className="font-mono">.</span>)
+                </label>
+                <input
+                  inputMode="decimal"
+                  value={form.quantity}
+                  onChange={(e) => {
+                    dismissFormFieldError("quantity");
+                    setForm((f) => ({ ...f, quantity: e.target.value }));
+                  }}
+                  className={`h-10 w-full rounded-xl border bg-[color:var(--color-surface)] px-3 text-[14px] tabular-nums ${
+                    formFieldErrors.quantity
+                      ? "border-[color:var(--color-expense)]"
+                      : "border-[color:var(--color-border)]"
+                  }`}
+                />
+                {formFieldErrors.quantity ? (
+                  <p className="text-[11px] text-[color:var(--color-expense)]">
+                    {formFieldErrors.quantity}
+                  </p>
+                ) : null}
+              </div>
+              <div className="space-y-1">
+                <label className="text-[11px] font-medium text-[color:var(--color-muted-foreground)]">
+                  Prezzo medio (opz. €, con <span className="font-mono">.</span>)
+                </label>
+                <input
+                  inputMode="decimal"
+                  value={form.avg_price}
+                  onChange={(e) => {
+                    dismissFormFieldError("avg_price");
+                    setForm((f) => ({ ...f, avg_price: e.target.value }));
+                  }}
+                  className={`h-10 w-full rounded-xl border bg-[color:var(--color-surface)] px-3 text-[14px] tabular-nums ${
+                    formFieldErrors.avg_price
+                      ? "border-[color:var(--color-expense)]"
+                      : "border-[color:var(--color-border)]"
+                  }`}
+                />
+                {formFieldErrors.avg_price ? (
+                  <p className="text-[11px] text-[color:var(--color-expense)]">
+                    {formFieldErrors.avg_price}
+                  </p>
+                ) : null}
+              </div>
+              <div className="sm:col-span-2 flex items-center gap-2 pt-1">
+                <input
+                  id="inv-is-manual"
+                  type="checkbox"
+                  checked={form.is_manual}
+                  onChange={(e) =>
+                    setForm((f) => ({ ...f, is_manual: e.target.checked }))
+                  }
+                  className="rounded border-[color:var(--color-border)]"
+                />
+                <label
+                  htmlFor="inv-is-manual"
+                  className="text-[12px] text-[color:var(--color-muted-foreground)] cursor-pointer"
+                >
+                  Posizione gestita soprattutto a mano (l&apos;aggiornamento da
+                  quotazione sulla riga disattiva questa spunta)
+                </label>
+              </div>
+              <div className="sm:col-span-2 space-y-1">
+                <label className="text-[11px] font-medium text-[color:var(--color-muted-foreground)]">
+                  Note
+                </label>
+                <textarea
+                  value={form.notes}
+                  onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))}
+                  rows={2}
+                  className="w-full rounded-xl border border-[color:var(--color-border)] bg-[color:var(--color-surface)] px-3 py-2 text-[14px]"
+                />
+              </div>
+              <div className="sm:col-span-2 flex flex-wrap items-center gap-2 pt-1">
+                <button
+                  type="submit"
+                  disabled={!configured || saving}
+                  className="inline-flex items-center gap-2 rounded-xl bg-[color:var(--color-accent)] px-4 py-2 text-[13px] font-semibold text-white disabled:opacity-50"
+                >
+                  {saving ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : form.id ? (
+                    <Pencil className="h-4 w-4" />
+                  ) : (
+                    <Plus className="h-4 w-4" />
+                  )}
+                  {form.id ? "Salva modifiche" : "Aggiungi posizione"}
+                </button>
+                <button
+                  type="button"
+                  disabled={saving}
+                  onClick={() => closePositionModal()}
+                  className="rounded-xl border border-[color:var(--color-border)] px-4 py-2 text-[13px] font-medium hover:bg-[color:var(--color-surface-muted)] disabled:opacity-50"
+                >
+                  Annulla
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       ) : null}
@@ -672,212 +1134,38 @@ export default function InvestimentiClient() {
         </div>
       </section>
 
-      <section className="card-surface p-6 space-y-4">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <h2 className="text-[15px] font-semibold">
-            {form.id ? "Modifica posizione" : "Nuova posizione"}
-          </h2>
-          {form.id ? (
-            <button
-              type="button"
-              onClick={() => setForm(emptyForm())}
-              className="text-[12px] font-medium text-[color:var(--color-muted-foreground)] hover:text-[color:var(--color-foreground)]"
-            >
-              Annulla modifica
-            </button>
-          ) : null}
+      <section className="card-surface flex flex-wrap items-start justify-between gap-4 p-5">
+        <div className="min-w-0 max-w-2xl space-y-1">
+          <h2 className="text-[15px] font-semibold">Le tue posizioni</h2>
+          <p className="text-[12px] leading-relaxed text-[color:var(--color-muted-foreground)]">
+            Aggiungi o modifica dal pulsante: ti mostriamo l&apos;anteprima dei
+            valori; gli importi accettano solo il punto decimale (es.{" "}
+            <code className="font-mono">1234.56</code>).
+          </p>
         </div>
-        <form onSubmit={onSave} className="grid gap-3 sm:grid-cols-2">
-          <div className="sm:col-span-2 space-y-1">
-            <label className="text-[11px] font-medium text-[color:var(--color-muted-foreground)]">
-              Nome
-            </label>
-            <input
-              required
-              value={form.name}
-              onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
-              className="h-10 w-full rounded-xl border border-[color:var(--color-border)] bg-[color:var(--color-surface)] px-3 text-[14px]"
-              placeholder="es. MSCI World, BTp 2030…"
-            />
-          </div>
-          <div className="sm:col-span-2 space-y-1">
-            <label className="text-[11px] font-medium text-[color:var(--color-muted-foreground)]">
-              ISIN (opz., quotazione Twelve Data)
-            </label>
-            <div className="flex flex-wrap items-stretch gap-2">
-              <input
-                value={form.isin}
-                onChange={(e) => {
-                  setQuoteHint(null);
-                  setForm((f) => ({ ...f, isin: e.target.value }));
-                }}
-                spellCheck={false}
-                autoCapitalize="characters"
-                className="h-10 min-w-[200px] flex-1 rounded-xl border border-[color:var(--color-border)] bg-[color:var(--color-surface)] px-3 font-mono text-[13px] uppercase tracking-wide"
-                placeholder="es. IE00B4L5Y983"
-              />
-              <button
-                type="button"
-                disabled={!configured || formQuoteBusy}
-                onClick={() => void onQuoteFromForm()}
-                className="inline-flex h-10 shrink-0 items-center gap-1.5 rounded-xl border border-[color:var(--color-border)] bg-[color:var(--color-surface-muted)] px-3 text-[12px] font-medium hover:bg-[color:var(--color-surface-muted)]/80 disabled:opacity-50"
-              >
-                {formQuoteBusy ? (
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                ) : (
-                  <RefreshCw className="h-3.5 w-3.5" />
-                )}
-                Aggiorna da mercato
-              </button>
-            </div>
-            {quoteHint ? (
-              <p className="text-[11px] leading-snug text-[color:var(--color-muted-foreground)]">
-                {quoteHint}
-              </p>
-            ) : (
-              <p className="text-[11px] text-[color:var(--color-muted-foreground)]">
-                Con quantità compilata: imposta il valore attuale come prezzo ×
-                quantità (valuta del listino scelto, di solito EUR).
-              </p>
-            )}
-          </div>
-          <div className="space-y-1">
-            <label className="text-[11px] font-medium text-[color:var(--color-muted-foreground)]">
-              Tipo
-            </label>
-            <select
-              value={form.instrument_type}
-              onChange={(e) =>
-                setForm((f) => ({ ...f, instrument_type: e.target.value }))
-              }
-              className="h-10 w-full rounded-xl border border-[color:var(--color-border)] bg-[color:var(--color-surface)] px-3 text-[14px]"
-            >
-              {INSTRUMENT_TYPES.map((t) => (
-                <option key={t} value={t}>
-                  {t}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div className="space-y-1">
-            <label className="text-[11px] font-medium text-[color:var(--color-muted-foreground)]">
-              Valore titoli / attuale (€) *
-            </label>
-            <input
-              required
-              inputMode="decimal"
-              value={form.current_value}
-              onChange={(e) =>
-                setForm((f) => ({ ...f, current_value: e.target.value }))
-              }
-              className="h-10 w-full rounded-xl border border-[color:var(--color-border)] bg-[color:var(--color-surface)] px-3 text-[14px] tabular-nums"
-            />
-          </div>
-          <div className="space-y-1">
-            <label className="text-[11px] font-medium text-[color:var(--color-muted-foreground)]">
-              Bonus fedeltà stimato (€)
-            </label>
-            <input
-              inputMode="decimal"
-              value={form.bonus_amount}
-              onChange={(e) =>
-                setForm((f) => ({ ...f, bonus_amount: e.target.value }))
-              }
-              className="h-10 w-full rounded-xl border border-[color:var(--color-border)] bg-[color:var(--color-surface)] px-3 text-[14px] tabular-nums"
-            />
-            <p className="text-[10px] text-[color:var(--color-muted-foreground)]">
-              Oppure usa &quot;Aggiorna bonus&quot; in elenco per storico
-              dettagliato.
-            </p>
-          </div>
-          <div className="space-y-1">
-            <label className="text-[11px] font-medium text-[color:var(--color-muted-foreground)]">
-              Scadenza vincolo bonus
-            </label>
-            <input
-              type="date"
-              value={form.maturity_date}
-              onChange={(e) =>
-                setForm((f) => ({ ...f, maturity_date: e.target.value }))
-              }
-              className="h-10 w-full rounded-xl border border-[color:var(--color-border)] bg-[color:var(--color-surface)] px-3 text-[14px]"
-            />
-          </div>
-          <div className="space-y-1">
-            <label className="text-[11px] font-medium text-[color:var(--color-muted-foreground)]">
-              Quantità (opz.)
-            </label>
-            <input
-              inputMode="decimal"
-              value={form.quantity}
-              onChange={(e) =>
-                setForm((f) => ({ ...f, quantity: e.target.value }))
-              }
-              className="h-10 w-full rounded-xl border border-[color:var(--color-border)] bg-[color:var(--color-surface)] px-3 text-[14px] tabular-nums"
-            />
-          </div>
-          <div className="space-y-1">
-            <label className="text-[11px] font-medium text-[color:var(--color-muted-foreground)]">
-              Prezzo medio (opz.)
-            </label>
-            <input
-              inputMode="decimal"
-              value={form.avg_price}
-              onChange={(e) =>
-                setForm((f) => ({ ...f, avg_price: e.target.value }))
-              }
-              className="h-10 w-full rounded-xl border border-[color:var(--color-border)] bg-[color:var(--color-surface)] px-3 text-[14px] tabular-nums"
-            />
-          </div>
-          <div className="sm:col-span-2 flex items-center gap-2 pt-1">
-            <input
-              id="inv-is-manual"
-              type="checkbox"
-              checked={form.is_manual}
-              onChange={(e) =>
-                setForm((f) => ({ ...f, is_manual: e.target.checked }))
-              }
-              className="rounded border-[color:var(--color-border)]"
-            />
-            <label
-              htmlFor="inv-is-manual"
-              className="text-[12px] text-[color:var(--color-muted-foreground)] cursor-pointer"
-            >
-              Posizione gestita principalmente a mano (disattivata dopo
-              aggiornamento da quotazione sulla riga)
-            </label>
-          </div>
-          <div className="sm:col-span-2 space-y-1">
-            <label className="text-[11px] font-medium text-[color:var(--color-muted-foreground)]">
-              Note
-            </label>
-            <textarea
-              value={form.notes}
-              onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))}
-              rows={2}
-              className="w-full rounded-xl border border-[color:var(--color-border)] bg-[color:var(--color-surface)] px-3 py-2 text-[14px]"
-            />
-          </div>
-          <div className="sm:col-span-2">
-            <button
-              type="submit"
-              disabled={!configured || saving}
-              className="inline-flex items-center gap-2 rounded-xl bg-[color:var(--color-accent)] px-4 py-2 text-[13px] font-semibold text-white disabled:opacity-50"
-            >
-              {saving ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <Plus className="h-4 w-4" />
-              )}
-              {form.id ? "Salva modifiche" : "Aggiungi posizione"}
-            </button>
-          </div>
-        </form>
+        <button
+          type="button"
+          onClick={openAddPositionModal}
+          disabled={!configured}
+          className="inline-flex shrink-0 items-center gap-2 rounded-xl bg-[color:var(--color-accent)] px-4 py-2.5 text-[13px] font-semibold text-white disabled:opacity-50"
+        >
+          <Plus className="h-4 w-4" />
+          Nuova posizione
+        </button>
       </section>
 
       <section className="card-surface overflow-hidden">
-        <div className="border-b border-[color:var(--color-border)] px-5 py-3">
+        <div className="border-b border-[color:var(--color-border)] px-5 py-3 flex flex-wrap items-center justify-between gap-2">
           <h2 className="text-[15px] font-semibold">Elenco posizioni</h2>
+          <button
+            type="button"
+            onClick={openAddPositionModal}
+            disabled={!configured}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-[color:var(--color-border)] bg-[color:var(--color-surface)] px-3 py-1.5 text-[12px] font-medium text-[color:var(--color-foreground)] hover:bg-[color:var(--color-surface-muted)] disabled:opacity-50"
+          >
+            <Plus className="h-3.5 w-3.5" />
+            Nuova posizione
+          </button>
         </div>
         {loading ? (
           <div className="flex items-center justify-center gap-2 py-16 text-[13px] text-[color:var(--color-muted-foreground)]">
@@ -886,7 +1174,9 @@ export default function InvestimentiClient() {
           </div>
         ) : rows.length === 0 ? (
           <p className="px-5 py-10 text-center text-[13px] text-[color:var(--color-muted-foreground)]">
-            Nessuna posizione inserita. Usa il form sopra per aggiungerne una.
+            Nessuna posizione inserita. Tocca{" "}
+            <strong className="text-[color:var(--color-foreground)]">Nuova posizione</strong> per aprire il
+            pannello e inserirne una.
           </p>
         ) : (
           <div className="overflow-x-auto">
@@ -974,7 +1264,7 @@ export default function InvestimentiClient() {
                         ) : null}
                         <button
                           type="button"
-                          onClick={() => onEdit(r)}
+                          onClick={() => openEditPositionModal(r)}
                           className="rounded-lg p-1.5 text-[color:var(--color-muted-foreground)] hover:bg-[color:var(--color-surface-muted)] hover:text-[color:var(--color-foreground)]"
                           aria-label="Modifica"
                         >
@@ -1135,6 +1425,17 @@ export default function InvestimentiClient() {
             />
           </div>
         </div>
+        <p className="text-[10px] text-[color:var(--color-muted-foreground)] -mt-1 sm:-mt-2">
+          Nei campi in € e in % usa il punto per i decimali (niente virgola). L&apos;orizzonte è un numero
+          intero (anni).
+        </p>
+        {projectionErrors.length > 0 ? (
+          <div className="space-y-1 rounded-xl border border-[color:var(--color-expense)]/30 bg-[color:var(--color-expense)]/5 p-3 text-[12px] text-[color:var(--color-expense)]">
+            {projectionErrors.map((msg) => (
+              <p key={msg}>{msg}</p>
+            ))}
+          </div>
+        ) : null}
 
         <div className="rounded-xl border border-[color:var(--color-border)] bg-[color:var(--color-surface-muted)]/40 p-4 text-[13px] space-y-1">
           <p>
