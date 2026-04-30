@@ -18,45 +18,107 @@ const TAG_GAP_EXPENSE = "Fuori dai tag scelti (uscite)";
 
 export type PeriodSankeyRow = { name: string; value: number };
 
+export type PeriodSankeyLinkTransaction = {
+  id: string;
+  date: string;
+  description: string;
+  merchant: string | null;
+  amount: number;
+};
+
+export type PeriodSankeyLink = {
+  source: number;
+  target: number;
+  value: number;
+  transactions?: PeriodSankeyLinkTransaction[];
+};
+
 export type PeriodSankeyData = {
   nodes: { name: string }[];
-  links: { source: number; target: number; value: number }[];
+  links: PeriodSankeyLink[];
 };
 
 export type SankeyGroupMode = "category" | "tags";
-
-function mergeTail(
-  map: Map<string, number>,
-  max: number,
-  otherLabel: string
-): PeriodSankeyRow[] {
-  const entries = [...map.entries()]
-    .filter(([, v]) => v > 0)
-    .sort((a, b) => b[1] - a[1]);
-  if (entries.length === 0) return [];
-  if (entries.length <= max) {
-    return entries.map(([name, value]) => ({ name, value }));
-  }
-  const top = entries.slice(0, max - 1);
-  const rest = entries.slice(max - 1).reduce((s, [, v]) => s + v, 0);
-  return [
-    ...top.map(([name, value]) => ({ name, value })),
-    { name: otherLabel, value: rest },
-  ];
-}
 
 function sumRows(rows: PeriodSankeyRow[]): number {
   return rows.reduce((s, r) => s + r.value, 0);
 }
 
+function pushTxContribution(
+  map: Map<string, PeriodSankeyLinkTransaction[]>,
+  key: string,
+  tx: PeriodSankeyLinkTransaction
+) {
+  const arr = map.get(key);
+  if (arr) arr.push(tx);
+  else map.set(key, [tx]);
+}
+
+function mergeTailWithBuckets(
+  map: Map<string, number>,
+  max: number,
+  otherLabel: string
+): { rows: PeriodSankeyRow[]; buckets: Map<string, string[]> } {
+  const entries = [...map.entries()]
+    .filter(([, v]) => v > 0)
+    .sort((a, b) => b[1] - a[1]);
+  const buckets = new Map<string, string[]>();
+  if (entries.length === 0) return { rows: [], buckets };
+  if (entries.length <= max) {
+    const rows = entries.map(([name, value]) => ({ name, value }));
+    for (const [name] of entries) buckets.set(name, [name]);
+    return { rows, buckets };
+  }
+  const top = entries.slice(0, max - 1);
+  const restEntries = entries.slice(max - 1);
+  const rest = restEntries.reduce((s, [, v]) => s + v, 0);
+  const rows = [
+    ...top.map(([name, value]) => ({ name, value })),
+    { name: otherLabel, value: rest },
+  ];
+  for (const [name] of top) buckets.set(name, [name]);
+  buckets.set(
+    otherLabel,
+    restEntries.map(([name]) => name)
+  );
+  return { rows, buckets };
+}
+
+function txForLabels(
+  txMap: Map<string, PeriodSankeyLinkTransaction[]>,
+  labels: readonly string[]
+): PeriodSankeyLinkTransaction[] {
+  const out: PeriodSankeyLinkTransaction[] = [];
+  for (const label of labels) {
+    const rows = txMap.get(label);
+    if (!rows?.length) continue;
+    out.push(...rows);
+  }
+  return out.sort((a, b) => b.amount - a.amount);
+}
+
 function finalizeFromMaps(
   incomeMap: Map<string, number>,
   expenseMap: Map<string, number>,
+  incomeTxMap: Map<string, PeriodSankeyLinkTransaction[]>,
+  expenseTxMap: Map<string, PeriodSankeyLinkTransaction[]>,
   leftOtherLabel: string,
   rightOtherLabel: string
 ): PeriodSankeyData | null {
-  let left = mergeTail(incomeMap, MAX_NODES_PER_SIDE, leftOtherLabel);
-  let right = mergeTail(expenseMap, MAX_NODES_PER_SIDE, rightOtherLabel);
+  const mergedLeft = mergeTailWithBuckets(
+    incomeMap,
+    MAX_NODES_PER_SIDE,
+    leftOtherLabel
+  );
+  const mergedRight = mergeTailWithBuckets(
+    expenseMap,
+    MAX_NODES_PER_SIDE,
+    rightOtherLabel
+  );
+  let left = mergedLeft.rows;
+  let right = mergedRight.rows;
+  const leftBuckets = mergedLeft.buckets;
+  const rightBuckets = mergedRight.buckets;
 
   let totalInc = sumRows(left);
   let totalExp = sumRows(right);
@@ -87,14 +149,26 @@ function finalizeFromMaps(
   ];
 
   const centerIdx = left.length;
-  const links: { source: number; target: number; value: number }[] = [];
+  const links: PeriodSankeyLink[] = [];
 
   for (let i = 0; i < left.length; i++) {
-    links.push({ source: i, target: centerIdx, value: left[i]!.value });
+    const row = left[i]!;
+    links.push({
+      source: i,
+      target: centerIdx,
+      value: row.value,
+      transactions: txForLabels(incomeTxMap, leftBuckets.get(row.name) ?? []),
+    });
   }
   for (let j = 0; j < right.length; j++) {
     const targetIdx = centerIdx + 1 + j;
-    links.push({ source: centerIdx, target: targetIdx, value: right[j]!.value });
+    const row = right[j]!;
+    links.push({
+      source: centerIdx,
+      target: targetIdx,
+      value: row.value,
+      transactions: txForLabels(expenseTxMap, rightBuckets.get(row.name) ?? []),
+    });
   }
 
   return { nodes, links };
@@ -136,6 +210,8 @@ export function buildPeriodSankeyGrouped(
     const pinnedSet = new Set(pinned);
     const incomeMap = new Map<string, number>();
     const expenseMap = new Map<string, number>();
+    const incomeTxMap = new Map<string, PeriodSankeyLinkTransaction[]>();
+    const expenseTxMap = new Map<string, PeriodSankeyLinkTransaction[]>();
 
     for (const t of transactions) {
       if (t.is_transfer) continue;
@@ -149,27 +225,57 @@ export function buildPeriodSankeyGrouped(
 
       if (amt > 0) {
         if (matched.length === 0) {
+          const tx = {
+            id: String(t.id ?? ""),
+            date: String(t.date ?? ""),
+            description: String(t.description ?? "Movimento"),
+            merchant: t.merchant ?? null,
+            amount: amt,
+          };
           incomeMap.set(
             TAG_GAP_INCOME,
             (incomeMap.get(TAG_GAP_INCOME) ?? 0) + amt
           );
+          pushTxContribution(incomeTxMap, TAG_GAP_INCOME, tx);
         } else {
           const share = amt / matched.length;
           for (const tag of matched) {
             incomeMap.set(tag, (incomeMap.get(tag) ?? 0) + share);
+            pushTxContribution(incomeTxMap, tag, {
+              id: String(t.id ?? ""),
+              date: String(t.date ?? ""),
+              description: String(t.description ?? "Movimento"),
+              merchant: t.merchant ?? null,
+              amount: share,
+            });
           }
         }
       } else if (amt < 0) {
         const abs = Math.abs(amt);
         if (matched.length === 0) {
+          const tx = {
+            id: String(t.id ?? ""),
+            date: String(t.date ?? ""),
+            description: String(t.description ?? "Movimento"),
+            merchant: t.merchant ?? null,
+            amount: abs,
+          };
           expenseMap.set(
             TAG_GAP_EXPENSE,
             (expenseMap.get(TAG_GAP_EXPENSE) ?? 0) + abs
           );
+          pushTxContribution(expenseTxMap, TAG_GAP_EXPENSE, tx);
         } else {
           const share = abs / matched.length;
           for (const tag of matched) {
             expenseMap.set(tag, (expenseMap.get(tag) ?? 0) + share);
+            pushTxContribution(expenseTxMap, tag, {
+              id: String(t.id ?? ""),
+              date: String(t.date ?? ""),
+              description: String(t.description ?? "Movimento"),
+              merchant: t.merchant ?? null,
+              amount: share,
+            });
           }
         }
       }
@@ -178,6 +284,8 @@ export function buildPeriodSankeyGrouped(
     return finalizeFromMaps(
       incomeMap,
       expenseMap,
+      incomeTxMap,
+      expenseTxMap,
       "Altre entrate",
       "Altre uscite"
     );
@@ -185,6 +293,8 @@ export function buildPeriodSankeyGrouped(
 
   const incomeMap = new Map<string, number>();
   const expenseMap = new Map<string, number>();
+  const incomeTxMap = new Map<string, PeriodSankeyLinkTransaction[]>();
+  const expenseTxMap = new Map<string, PeriodSankeyLinkTransaction[]>();
 
   for (const t of transactions) {
     if (t.is_transfer) continue;
@@ -193,14 +303,31 @@ export function buildPeriodSankeyGrouped(
     const cat = (t.category || "Altro").trim() || "Altro";
     if (amt > 0) {
       incomeMap.set(cat, (incomeMap.get(cat) ?? 0) + amt);
+      pushTxContribution(incomeTxMap, cat, {
+        id: String(t.id ?? ""),
+        date: String(t.date ?? ""),
+        description: String(t.description ?? "Movimento"),
+        merchant: t.merchant ?? null,
+        amount: amt,
+      });
     } else if (amt < 0) {
-      expenseMap.set(cat, (expenseMap.get(cat) ?? 0) + Math.abs(amt));
+      const abs = Math.abs(amt);
+      expenseMap.set(cat, (expenseMap.get(cat) ?? 0) + abs);
+      pushTxContribution(expenseTxMap, cat, {
+        id: String(t.id ?? ""),
+        date: String(t.date ?? ""),
+        description: String(t.description ?? "Movimento"),
+        merchant: t.merchant ?? null,
+        amount: abs,
+      });
     }
   }
 
   return finalizeFromMaps(
     incomeMap,
     expenseMap,
+    incomeTxMap,
+    expenseTxMap,
     "Altre entrate",
     "Altre uscite"
   );

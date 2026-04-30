@@ -5,6 +5,7 @@ import { ResponsiveContainer, Sankey } from "recharts";
 import { formatCurrency } from "@/lib/mock-data";
 import {
   PERIOD_SANKEY_CENTER_LABEL,
+  type PeriodSankeyLinkTransaction,
   type PeriodSankeyData,
 } from "@/lib/sankey-period";
 
@@ -18,6 +19,12 @@ type HoverTip = {
   amount: string;
   clientX: number;
   clientY: number;
+};
+
+type DetailTip = {
+  title: string;
+  amount: string;
+  transactions: PeriodSankeyLinkTransaction[];
 };
 
 type TreeNodePayload = {
@@ -47,6 +54,7 @@ type LinkRenderProps = {
     value?: number;
     source: TreeNodePayload;
     target: TreeNodePayload;
+    transactions?: PeriodSankeyLinkTransaction[];
   };
 };
 
@@ -69,6 +77,8 @@ function linkPathD(p: Pick<
  */
 export default function PeriodSankeyChart({ data, className }: Props) {
   const [hover, setHover] = useState<HoverTip | null>(null);
+  const [showTransactionsOnClick, setShowTransactionsOnClick] = useState(true);
+  const [detail, setDetail] = useState<DetailTip | null>(null);
 
   const centerIdx = useMemo(
     () =>
@@ -133,66 +143,76 @@ export default function PeriodSankeyChart({ data, className }: Props) {
     [centerIdx]
   );
 
-  const linkRenderer = useCallback((props: LinkRenderProps) => {
-    const {
-      sourceX,
-      targetX,
-      sourceY,
-      targetY,
-      sourceControlX,
-      targetControlX,
-      linkWidth,
-      payload,
-    } = props;
+  const linkRenderer = useCallback(
+    (props: LinkRenderProps) => {
+      const {
+        sourceX,
+        targetX,
+        sourceY,
+        targetY,
+        sourceControlX,
+        targetControlX,
+        linkWidth,
+        payload,
+      } = props;
 
-    const sn = String(payload?.source?.name ?? "").trim();
-    const tn = String(payload?.target?.name ?? "").trim();
-    const title =
-      sn && tn ? `${sn} → ${tn}` : sn || tn || "Flusso";
-    const v = Number(payload?.value ?? 0);
-    const amount = Number.isFinite(v) ? formatCurrency(v) : "—";
+      const sn = String(payload?.source?.name ?? "").trim();
+      const tn = String(payload?.target?.name ?? "").trim();
+      const title = sn && tn ? `${sn} → ${tn}` : sn || tn || "Flusso";
+      const v = Number(payload?.value ?? 0);
+      const amount = Number.isFinite(v) ? formatCurrency(v) : "—";
 
-    const d = linkPathD({
-      sourceX,
-      sourceY,
-      sourceControlX,
-      targetX,
-      targetY,
-      targetControlX,
-    });
+      const d = linkPathD({
+        sourceX,
+        sourceY,
+        sourceControlX,
+        targetX,
+        targetY,
+        targetControlX,
+      });
 
-    return (
-      <path
-        className="recharts-sankey-link"
-        d={d}
-        fill="none"
-        stroke="rgba(96, 165, 250, 0.4)"
-        strokeWidth={linkWidth}
-        strokeOpacity={0.95}
-        style={{ cursor: "default" }}
-        onMouseEnter={(e) => {
-          setHover({
-            title,
-            amount,
-            clientX: e.clientX,
-            clientY: e.clientY,
-          });
-        }}
-        onMouseMove={(e) => {
-          setHover((prev) =>
-            prev
-              ? {
-                  ...prev,
-                  clientX: e.clientX,
-                  clientY: e.clientY,
-                }
-              : null
-          );
-        }}
-        onMouseLeave={() => setHover(null)}
-      />
-    );
-  }, []);
+      return (
+        <path
+          className="recharts-sankey-link"
+          d={d}
+          fill="none"
+          stroke="rgba(96, 165, 250, 0.4)"
+          strokeWidth={linkWidth}
+          strokeOpacity={0.95}
+          style={{ cursor: showTransactionsOnClick ? "pointer" : "default" }}
+          onMouseEnter={(e) => {
+            setHover({
+              title,
+              amount,
+              clientX: e.clientX,
+              clientY: e.clientY,
+            });
+          }}
+          onMouseMove={(e) => {
+            setHover((prev) =>
+              prev
+                ? {
+                    ...prev,
+                    clientX: e.clientX,
+                    clientY: e.clientY,
+                  }
+                : null
+            );
+          }}
+          onMouseLeave={() => setHover(null)}
+          onClick={() => {
+            if (!showTransactionsOnClick) return;
+            setDetail({
+              title,
+              amount,
+              transactions: payload?.transactions ?? [],
+            });
+          }}
+        />
+      );
+    },
+    [showTransactionsOnClick]
+  );
 
   return (
     <div
@@ -203,6 +223,22 @@ export default function PeriodSankeyChart({ data, className }: Props) {
       ].join(" ")}
       onMouseLeave={() => setHover(null)}
     >
+      <div className="mb-2 flex justify-end">
+        <label className="inline-flex items-center gap-2 text-[11px] text-tremor-content-subtle">
+          <input
+            type="checkbox"
+            checked={showTransactionsOnClick}
+            onChange={(e) => {
+              const next = e.target.checked;
+              setShowTransactionsOnClick(next);
+              if (!next) setDetail(null);
+            }}
+            className="h-3.5 w-3.5 accent-[color:var(--color-accent)]"
+          />
+          Click su un rivolo: dettagli transazioni
+        </label>
+      </div>
+
       <ResponsiveContainer width="100%" height="100%" className="overflow-visible">
         <Sankey
           data={chartData}
@@ -234,6 +270,69 @@ export default function PeriodSankeyChart({ data, className }: Props) {
             {hover.title}
           </p>
           <p className="mt-1 text-[13px] font-medium tabular-nums">{hover.amount}</p>
+        </div>
+      ) : null}
+
+      {detail ? (
+        <div
+          className="absolute right-2 top-2 z-[220] w-[min(460px,calc(100%-1rem))] rounded-xl border p-3 shadow-lg"
+          style={{
+            background: "var(--surface)",
+            borderColor: "var(--border)",
+            color: "var(--foreground)",
+          }}
+        >
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <p className="text-[11px] font-semibold leading-snug break-words">
+                {detail.title}
+              </p>
+              <p className="mt-1 text-[13px] font-medium tabular-nums">
+                {detail.amount}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setDetail(null)}
+              className="rounded-md border px-2 py-1 text-[11px] hover:border-[color:var(--color-accent)]"
+              style={{ borderColor: "var(--border)" }}
+            >
+              Chiudi
+            </button>
+          </div>
+
+          <div className="mt-3 max-h-[260px] space-y-2 overflow-auto pr-1">
+            {detail.transactions.length ? (
+              detail.transactions.slice(0, 20).map((tx) => (
+                <div
+                  key={`${tx.id}-${tx.date}-${tx.amount}`}
+                  className="rounded-lg border px-2.5 py-2"
+                  style={{ borderColor: "var(--border)" }}
+                >
+                  <p className="text-[11px] font-medium leading-tight">
+                    {tx.description}
+                  </p>
+                  <p className="mt-0.5 text-[10px] text-tremor-content-subtle">
+                    {tx.date}
+                    {tx.merchant ? ` · ${tx.merchant}` : ""}
+                  </p>
+                  <p className="mt-1 text-[12px] font-semibold tabular-nums">
+                    {formatCurrency(tx.amount)}
+                  </p>
+                </div>
+              ))
+            ) : (
+              <p className="text-[12px] text-tremor-content-subtle">
+                Nessuna transazione disponibile per questo rivolo (puo essere un
+                flusso sintetico di bilanciamento).
+              </p>
+            )}
+          </div>
+          {detail.transactions.length > 20 ? (
+            <p className="mt-2 text-[10px] text-tremor-content-subtle">
+              Mostrate le prime 20 transazioni.
+            </p>
+          ) : null}
         </div>
       ) : null}
     </div>
