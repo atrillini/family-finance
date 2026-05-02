@@ -3,7 +3,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   AlertCircle,
-  Loader2,
   Repeat,
   ArrowDownLeft,
   ArrowUpRight,
@@ -19,6 +18,7 @@ import SemanticInterpretationPanel from "./SemanticInterpretationPanel";
 import DateRangePicker from "./DateRangePicker";
 import MonthNavigator from "./MonthNavigator";
 import BulkActionsBar from "./BulkActionsBar";
+import TransactionsTableSkeleton from "./premium/TransactionsTableSkeleton";
 import EditTransactionModal, {
   type EditTransactionPatch,
 } from "./EditTransactionModal";
@@ -1028,10 +1028,7 @@ export default function TransactionsClient({
       />
 
       {loading && displayed.length === 0 ? (
-        <div className="card-surface flex items-center justify-center gap-2 p-10 text-[13px] text-[color:var(--color-muted-foreground)]">
-          <Loader2 className="h-4 w-4 animate-spin" />
-          Caricamento transazioni…
-        </div>
+        <TransactionsTableSkeleton />
       ) : (
         <TransactionsTable
           transactions={displayed}

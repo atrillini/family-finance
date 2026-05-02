@@ -1,14 +1,15 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { motion, useReducedMotion } from "framer-motion";
 import {
   Bell,
   CheckCircle2,
   Info,
-  Loader2,
   TriangleAlert,
 } from "lucide-react";
 import { getSupabaseClient, isSupabaseConfigured } from "@/lib/supabase";
+import SkeletonGlow from "./premium/SkeletonGlow";
 import type { RealtimeChannel } from "@supabase/supabase-js";
 
 type NotifRow = {
@@ -50,10 +51,13 @@ function formatWhen(iso: string): string {
 
 export default function NotificationsBell() {
   const configured = isSupabaseConfigured();
+  const reduceMotion = useReducedMotion();
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [items, setItems] = useState<NotifRow[]>([]);
   const [unread, setUnread] = useState(0);
+  const [bellWiggle, setBellWiggle] = useState(0);
+  const prevUnread = useRef<number | null>(null);
   const panelRef = useRef<HTMLDivElement | null>(null);
   const btnRef = useRef<HTMLButtonElement | null>(null);
 
@@ -79,6 +83,20 @@ export default function NotificationsBell() {
   useEffect(() => {
     void refresh();
   }, [refresh]);
+
+  useEffect(() => {
+    if (reduceMotion) {
+      prevUnread.current = unread;
+      return;
+    }
+    if (
+      prevUnread.current !== null &&
+      unread > prevUnread.current
+    ) {
+      setBellWiggle((n) => n + 1);
+    }
+    prevUnread.current = unread;
+  }, [unread, reduceMotion]);
 
   // Realtime: richiede `supabase_realtime` sulla tabella `notifications`
   useEffect(() => {
@@ -174,7 +192,19 @@ export default function NotificationsBell() {
         onClick={() => setOpen((v) => !v)}
         className="relative flex h-9 w-9 items-center justify-center rounded-full border border-[color:var(--color-border)] bg-[color:var(--color-surface)] text-[color:var(--color-muted-foreground)] transition-colors hover:text-[color:var(--color-foreground)]"
       >
-        <Bell className="h-4 w-4" />
+        <motion.span
+          key={bellWiggle}
+          className="inline-flex"
+          initial={{ rotate: 0 }}
+          animate={
+            reduceMotion || bellWiggle === 0
+              ? { rotate: 0 }
+              : { rotate: [0, -16, 14, -10, 7, 0] }
+          }
+          transition={{ duration: 0.52, ease: "easeInOut" }}
+        >
+          <Bell className="h-4 w-4" />
+        </motion.span>
         {unread > 0 ? (
           <span
             className="absolute right-1 top-1 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-[color:var(--color-expense)] px-[5px] text-[10px] font-semibold leading-none text-white"
@@ -209,9 +239,16 @@ export default function NotificationsBell() {
 
           <div className="max-h-[min(70vh,420px)] overflow-y-auto">
             {loading ? (
-              <div className="flex items-center justify-center gap-2 py-10 text-[12px] text-[color:var(--color-muted-foreground)]">
-                <Loader2 className="h-4 w-4 animate-spin" />
-                Caricamento…
+              <div className="space-y-3 px-3 py-6">
+                {Array.from({ length: 5 }).map((_, i) => (
+                  <div key={i} className="flex gap-2.5">
+                    <SkeletonGlow className="h-9 w-9 shrink-0 rounded-lg" />
+                    <div className="min-w-0 flex-1 space-y-2 pt-0.5">
+                      <SkeletonGlow className="h-3.5 w-[72%] max-w-[220px] rounded-md" />
+                      <SkeletonGlow className="h-3 w-full max-w-[280px] rounded-md" />
+                    </div>
+                  </div>
+                ))}
               </div>
             ) : items.length === 0 ? (
               <p className="px-4 py-10 text-center text-[12.5px] text-[color:var(--color-muted-foreground)]">

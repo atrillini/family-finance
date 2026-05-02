@@ -1,3 +1,5 @@
+"use client";
+
 import { ArrowDownLeft, ArrowUpRight, PiggyBank, Wallet } from "lucide-react";
 import {
   formatCurrency,
@@ -5,6 +7,8 @@ import {
   type MonthlySummary,
 } from "@/lib/mock-data";
 import type { PeriodLabelParts } from "@/lib/period-labels";
+import CurrencyCounter from "./premium/CurrencyCounter";
+import { FadeUpChild, FadeUpStagger } from "./premium/motion-primitives";
 
 type SummaryCardsProps = {
   summary: MonthlySummary;
@@ -37,31 +41,35 @@ export default function SummaryCards({
     : null;
 
   return (
-    <section className="grid grid-cols-1 gap-5 lg:grid-cols-3">
-      <HeroBalanceCard balance={summary.balance} pocketBalance={pocketBalance} />
+    <FadeUpStagger className="grid grid-cols-1 gap-5 lg:grid-cols-3">
+      <FadeUpChild className="min-w-0">
+        <HeroBalanceCard balance={summary.balance} pocketBalance={pocketBalance} />
+      </FadeUpChild>
 
-      <StatCard
-        label="Entrate"
-        value={summary.income}
-        periodLabel={periodLabel}
-        tone="income"
-        icon={<ArrowDownLeft className="h-4 w-4" strokeWidth={2.5} />}
-        delta={incomeDelta}
-        // Per le entrate, un aumento è positivo.
-        positiveIsGood
-      />
+      <FadeUpChild className="min-w-0">
+        <StatCard
+          label="Entrate"
+          value={summary.income}
+          periodLabel={periodLabel}
+          tone="income"
+          icon={<ArrowDownLeft className="h-4 w-4" strokeWidth={2.5} />}
+          delta={incomeDelta}
+          positiveIsGood
+        />
+      </FadeUpChild>
 
-      <StatCard
-        label="Uscite"
-        value={summary.expenses}
-        periodLabel={periodLabel}
-        tone="expense"
-        icon={<ArrowUpRight className="h-4 w-4" strokeWidth={2.5} />}
-        delta={expensesDelta}
-        // Per le uscite una diminuzione è positiva.
-        positiveIsGood={false}
-      />
-    </section>
+      <FadeUpChild className="min-w-0">
+        <StatCard
+          label="Uscite"
+          value={summary.expenses}
+          periodLabel={periodLabel}
+          tone="expense"
+          icon={<ArrowUpRight className="h-4 w-4" strokeWidth={2.5} />}
+          delta={expensesDelta}
+          positiveIsGood={false}
+        />
+      </FadeUpChild>
+    </FadeUpStagger>
   );
 }
 
@@ -74,12 +82,13 @@ function HeroBalanceCard({
 }) {
   const showPocket =
     typeof pocketBalance === "number" && Math.abs(pocketBalance) > 0.009;
+  const positiveGlow = balance > 0.009;
 
   return (
-    <div className="hero-card p-6 md:p-7 min-h-[180px] flex flex-col justify-between">
+    <div className="hero-card rounded-2xl p-6 md:p-7 min-h-[180px] flex flex-col justify-between">
       <div className="flex items-start justify-between">
         <div className="flex items-center gap-2">
-          <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-white/10 backdrop-blur-sm">
+          <div className="flex h-8 w-8 items-center justify-center rounded-xl border border-white/10 bg-white/10 backdrop-blur-sm">
             <Wallet className="h-4 w-4" strokeWidth={2.5} />
           </div>
           <div>
@@ -97,11 +106,16 @@ function HeroBalanceCard({
       </div>
 
       <div>
-        <p className="text-[36px] md:text-[40px] font-semibold tracking-tight leading-none">
-          {formatCurrency(balance)}
+        <p
+          className={[
+            "text-[36px] md:text-[40px] font-semibold tracking-tight leading-none tabular-nums",
+            positiveGlow ? "balance-hero-glow" : "",
+          ].join(" ")}
+        >
+          <CurrencyCounter value={balance} />
         </p>
         {showPocket ? (
-          <p className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-white/10 px-2 py-0.5 text-[12px] font-medium text-white/85 backdrop-blur-sm">
+          <p className="mt-2 inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-white/10 px-2 py-0.5 text-[12px] font-medium text-white/85 backdrop-blur-sm">
             <PiggyBank className="h-3.5 w-3.5" strokeWidth={2.5} />
             di cui {formatCurrency(pocketBalance!)} nei salvadanai (esclusi)
           </p>
@@ -129,16 +143,7 @@ function StatCard({
   periodLabel: PeriodLabelParts;
   tone: "income" | "expense";
   icon: React.ReactNode;
-  /**
-   * Variazione percentuale vs periodo precedente. `null` = non disponibile
-   * (periodo precedente a 0 o non pervenuto): in quel caso non mostriamo
-   * alcuna etichetta.
-   */
   delta: number | null;
-  /**
-   * `true` per le entrate: un valore positivo del delta viene mostrato in
-   * verde. `false` per le uscite: un aumento è negativo (rosso).
-   */
   positiveIsGood: boolean;
 }) {
   const toneStyles =
@@ -146,7 +151,6 @@ function StatCard({
       ? "bg-[color:var(--color-income)]/12 text-[color:var(--color-income)]"
       : "bg-[color:var(--color-expense)]/12 text-[color:var(--color-expense)]";
 
-  // Decide colore/segno del badge del delta.
   let badgeClass = "bg-black/5 text-[color:var(--color-muted-foreground)]";
   let badgeText = "—";
   if (delta !== null && Number.isFinite(delta)) {
@@ -166,7 +170,13 @@ function StatCard({
   }
 
   return (
-    <div className="card-surface p-6 flex flex-col justify-between min-h-[180px]">
+    <div
+      className={[
+        "card-surface flex min-h-[180px] flex-col justify-between rounded-2xl border p-6",
+        "border-zinc-800/20 bg-[color:var(--color-surface)]/92 backdrop-blur-md",
+        "dark:border-zinc-800/45",
+      ].join(" ")}
+    >
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2.5">
           <div
@@ -201,8 +211,8 @@ function StatCard({
       </div>
 
       <div>
-        <p className="text-[32px] font-semibold tracking-tight leading-none">
-          {formatCurrency(value)}
+        <p className="text-[32px] font-semibold tracking-tight leading-none tabular-nums">
+          <CurrencyCounter value={value} />
         </p>
         <p className="mt-2 text-[12px] text-[color:var(--color-muted-foreground)]">
           rispetto al periodo precedente

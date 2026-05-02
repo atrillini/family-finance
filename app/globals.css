@@ -211,3 +211,43 @@ body {
     stop-opacity: 0.08 !important;
   }
 }
+
+/* Premium: skeleton shimmer */
+@keyframes skeleton-shimmer-slide {
+  0% {
+    transform: translateX(-120%);
+  }
+  100% {
+    transform: translateX(120%);
+  }
+}
+
+.skeleton-shimmer-bar::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  width: 55%;
+  background: linear-gradient(
+    105deg,
+    transparent 0%,
+    color-mix(in srgb, var(--foreground) 14%, transparent) 45%,
+    transparent 90%
+  );
+  animation: skeleton-shimmer-slide 1.45s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .skeleton-shimmer-bar::after {
+    animation: none;
+    opacity: 0.35;
+    transform: none;
+    width: 100%;
+  }
+}
+
+/* Saldo positivo sulla hero card */
+.balance-hero-glow {
+  text-shadow:
+    0 0 18px rgba(48, 209, 88, 0.45),
+    0 0 42px rgba(48, 209, 88, 0.2);
+}

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { motion, useReducedMotion } from "framer-motion";
 import {
   ShoppingBag,
   UtensilsCrossed,
@@ -53,6 +54,8 @@ const CATEGORY_ICONS: Record<TransactionCategory, LucideIcon> = {
 const PAGE_SIZE_OPTIONS = [20, 30, 50, 100] as const;
 
 const EMPTY_SELECTION: ReadonlySet<string> = new Set();
+
+const MotionTableRow = motion.tr;
 
 type TransactionsTableProps = {
   transactions: Transaction[];
@@ -112,6 +115,7 @@ export default function TransactionsTable({
   showTransactionSearch = true,
   tagSuggestions = [],
 }: TransactionsTableProps) {
+  const reduceMotion = useReducedMotion();
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState<number>(defaultPageSize);
 
@@ -170,7 +174,7 @@ export default function TransactionsTable({
     4 + (selectable ? 1 : 0) + (onRecategorize ? 1 : 0);
 
   return (
-    <section className="card-surface overflow-hidden">
+    <section className="card-surface overflow-visible rounded-2xl">
       <div className="flex flex-col gap-4 border-b border-[color:var(--color-border)] px-4 py-4 sm:px-5 md:px-6 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0 flex-1">
           <h2 className="text-[16px] font-semibold tracking-tight">{title}</h2>
@@ -244,8 +248,9 @@ export default function TransactionsTable({
               );
               const isSelected = selection.has(t.id);
               return (
-                <tr
+                <MotionTableRow
                   key={t.id}
+                  layout={false}
                   onClick={clickable ? () => onRowClick!(t) : undefined}
                   onKeyDown={
                     clickable
@@ -264,14 +269,26 @@ export default function TransactionsTable({
                       ? `Modifica ${shortenDescription(t.description, t.merchant)}`
                       : undefined
                   }
+                  initial={false}
+                  whileHover={
+                    reduceMotion
+                      ? undefined
+                      : { scale: 1.02, transition: { duration: 0.18, ease: "easeOut" } }
+                  }
+                  whileTap={
+                    reduceMotion
+                      ? undefined
+                      : { scale: 0.985, transition: { duration: 0.12 } }
+                  }
+                  style={{ transformOrigin: "center left" }}
                   className={[
-                    "group transition-colors hover:bg-[color:var(--color-surface-muted)]/50",
+                    "group border-b border-[color:var(--color-border)] transition-colors",
+                    "hover:bg-zinc-800/12 active:bg-zinc-800/18",
+                    "dark:hover:bg-zinc-800/35 dark:active:bg-zinc-800/45",
                     clickable
-                      ? "cursor-pointer focus:outline-none focus-visible:bg-[color:var(--color-surface-muted)]/60"
+                      ? "cursor-pointer focus:outline-none focus-visible:bg-zinc-800/15 dark:focus-visible:bg-zinc-800/40"
                       : "",
-                    i < pageRows.length - 1
-                      ? "border-b border-[color:var(--color-border)]"
-                      : "",
+                    i === pageRows.length - 1 ? "border-b-0" : "",
                     isSelected ? "bg-[color:var(--color-accent)]/5" : "",
                   ].join(" ")}
                 >
@@ -501,7 +518,7 @@ export default function TransactionsTable({
                       </button>
                     </td>
                   ) : null}
-                </tr>
+                </MotionTableRow>
               );
             })}
 

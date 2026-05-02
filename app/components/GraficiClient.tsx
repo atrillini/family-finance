@@ -47,6 +47,8 @@ import {
   type SankeyGroupMode,
 } from "@/lib/sankey-period";
 import { normalizeTagLabel } from "@/lib/tag-colors";
+import ChartAreaSkeleton from "./premium/ChartAreaSkeleton";
+import SkeletonGlow from "./premium/SkeletonGlow";
 
 /** Colori espliciti (hex) per contrasto su sfondo scuro/chiaro — Tremor Area. */
 const CHART_AREA_COLORS = ["#3b82f6", "#94a3b8"] as const;
@@ -433,10 +435,7 @@ export default function GraficiClient({
           giorni prima.
         </Text>
         {loading && chartData.length === 0 ? (
-          <div className="mt-8 flex items-center justify-center gap-2 py-12 text-[13px] text-tremor-content-subtle">
-            <Loader2 className="h-4 w-4 animate-spin" />
-            Caricamento dati…
-          </div>
+          <ChartAreaSkeleton className="mt-8 py-2" />
         ) : chartData.length === 0 ? (
           <p className="mt-6 text-[13px] text-tremor-content-subtle">
             Nessun dato nel range selezionato.
@@ -479,10 +478,7 @@ export default function GraficiClient({
           </Text>
         ) : null}
         {loading && weeklyChartData.length === 0 ? (
-          <div className="mt-8 flex items-center justify-center gap-2 py-12 text-[13px] text-tremor-content-subtle">
-            <Loader2 className="h-4 w-4 animate-spin" />
-            Caricamento dati…
-          </div>
+          <ChartAreaSkeleton className="mt-8 py-2" />
         ) : weeklyChartData.length === 0 ? (
           <p className="mt-6 text-[13px] text-tremor-content-subtle">
             Nessun dato per il confronto settimanale nel range caricato.
@@ -612,9 +608,9 @@ export default function GraficiClient({
         ) : null}
 
         {loading ? (
-          <div className="mt-8 flex min-h-[280px] items-center justify-center gap-2 text-[13px] text-tremor-content-subtle">
-            <Loader2 className="h-4 w-4 animate-spin" />
-            Caricamento…
+          <div className="mt-8 flex min-h-[280px] flex-col justify-center gap-4 py-4">
+            <SkeletonGlow className="h-4 w-48 max-w-full rounded-md" />
+            <SkeletonGlow className="min-h-[220px] w-full flex-1 rounded-2xl border border-zinc-800/15 dark:border-zinc-800/35" />
           </div>
         ) : sankeyMode === "tags" && sankeyPinnedTags.length === 0 ? (
           <p className="mt-6 text-[13px] text-tremor-content-subtle">

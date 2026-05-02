@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { motion, useReducedMotion } from "framer-motion";
 import {
   AlertCircle,
   Gift,
@@ -36,6 +37,11 @@ import {
   parseStrictDecimalUnbounded,
   parseStrictIntYears,
 } from "@/lib/strict-decimal";
+import CurrencyCounter from "./premium/CurrencyCounter";
+import { FadeUpChild, FadeUpStagger } from "./premium/motion-primitives";
+import InvestimentiTableSkeleton from "./premium/InvestimentiTableSkeleton";
+
+const MotionTableRow = motion.tr;
 
 const INSTRUMENT_TYPES = [
   "Fondo",
@@ -77,6 +83,7 @@ const emptyForm = (): FormState => ({
 
 export default function InvestimentiClient() {
   const configured = isSupabaseConfigured();
+  const reduceMotion = useReducedMotion();
   const [accounts, setAccounts] = useState<Account[]>(MOCK_ACCOUNTS);
   const [cashLedger, setCashLedger] = useState<Record<string, number>>({});
   const [rows, setRows] = useState<ManualInvestmentRow[]>([]);
@@ -1092,21 +1099,23 @@ export default function InvestimentiClient() {
         </div>
       ) : null}
 
+      <FadeUpStagger className="space-y-8">
+      <FadeUpChild>
       <section className="grid gap-4 sm:grid-cols-3">
-        <div className="card-surface p-5">
+        <div className="card-surface rounded-2xl border border-zinc-800/20 bg-[color:var(--color-surface)]/92 p-5 backdrop-blur-md dark:border-zinc-800/45">
           <p className="text-[12px] font-medium text-[color:var(--color-muted-foreground)]">
             Liquidità (conti + pocket)
           </p>
           <p className="mt-1 text-[22px] font-semibold tabular-nums tracking-tight">
-            {formatCurrency(liquidityTotal)}
+            <CurrencyCounter value={liquidityTotal} />
           </p>
         </div>
-        <div className="card-surface p-5">
+        <div className="card-surface rounded-2xl border border-zinc-800/20 bg-[color:var(--color-surface)]/92 p-5 backdrop-blur-md dark:border-zinc-800/45">
           <p className="text-[12px] font-medium text-[color:var(--color-muted-foreground)]">
             Controvalore totale (titoli + bonus)
           </p>
           <p className="mt-1 text-[22px] font-semibold tabular-nums tracking-tight">
-            {formatCurrency(sumControvalore)}
+            <CurrencyCounter value={sumControvalore} />
           </p>
           <p className="mt-2 text-[11px] text-[color:var(--color-muted-foreground)] tabular-nums">
             Titoli {formatCurrency(sumTitoli)}
@@ -1118,12 +1127,12 @@ export default function InvestimentiClient() {
             ) : null}
           </p>
         </div>
-        <div className="card-surface p-5 ring-1 ring-[color:var(--color-accent)]/25">
+        <div className="card-surface rounded-2xl border border-zinc-800/20 bg-[color:var(--color-surface)]/92 p-5 ring-1 ring-[color:var(--color-accent)]/25 backdrop-blur-md dark:border-zinc-800/45">
           <p className="text-[12px] font-medium text-[color:var(--color-muted-foreground)]">
             Patrimonio stimato
           </p>
           <p className="mt-1 text-[22px] font-semibold tabular-nums tracking-tight text-[color:var(--color-accent)]">
-            {formatCurrency(patrimonioStimato)}
+            <CurrencyCounter value={patrimonioStimato} />
           </p>
           <p className="mt-2 text-[11px] text-[color:var(--color-muted-foreground)]">
             Somma conti + controvalore posizioni (valore titoli + bonus fedeltà).
@@ -1133,8 +1142,10 @@ export default function InvestimentiClient() {
           </p>
         </div>
       </section>
+      </FadeUpChild>
 
-      <section className="card-surface flex flex-wrap items-start justify-between gap-4 p-5">
+      <FadeUpChild>
+      <section className="card-surface flex flex-wrap items-start justify-between gap-4 rounded-2xl border border-zinc-800/20 p-5 dark:border-zinc-800/45">
         <div className="min-w-0 max-w-2xl space-y-1">
           <h2 className="text-[15px] font-semibold">Le tue posizioni</h2>
           <p className="text-[12px] leading-relaxed text-[color:var(--color-muted-foreground)]">
@@ -1153,8 +1164,10 @@ export default function InvestimentiClient() {
           Nuova posizione
         </button>
       </section>
+      </FadeUpChild>
 
-      <section className="card-surface overflow-hidden">
+      <FadeUpChild>
+      <section className="card-surface overflow-visible rounded-2xl border border-zinc-800/20 dark:border-zinc-800/45">
         <div className="border-b border-[color:var(--color-border)] px-5 py-3 flex flex-wrap items-center justify-between gap-2">
           <h2 className="text-[15px] font-semibold">Elenco posizioni</h2>
           <button
@@ -1168,10 +1181,7 @@ export default function InvestimentiClient() {
           </button>
         </div>
         {loading ? (
-          <div className="flex items-center justify-center gap-2 py-16 text-[13px] text-[color:var(--color-muted-foreground)]">
-            <Loader2 className="h-4 w-4 animate-spin" />
-            Caricamento…
-          </div>
+          <InvestimentiTableSkeleton />
         ) : rows.length === 0 ? (
           <p className="px-5 py-10 text-center text-[13px] text-[color:var(--color-muted-foreground)]">
             Nessuna posizione inserita. Tocca{" "}
@@ -1205,9 +1215,25 @@ export default function InvestimentiClient() {
                     rowIsin && normalizeIsin(rowIsin)
                   );
                   return (
-                  <tr
+                  <MotionTableRow
                     key={r.id}
-                    className="border-t border-[color:var(--color-border)]"
+                    layout={false}
+                    initial={false}
+                    whileHover={
+                      reduceMotion
+                        ? undefined
+                        : {
+                            scale: 1.02,
+                            transition: { duration: 0.18, ease: "easeOut" },
+                          }
+                    }
+                    whileTap={
+                      reduceMotion
+                        ? undefined
+                        : { scale: 0.985, transition: { duration: 0.12 } }
+                    }
+                    style={{ transformOrigin: "center left" }}
+                    className="border-t border-[color:var(--color-border)] transition-colors hover:bg-zinc-800/12 active:bg-zinc-800/18 dark:hover:bg-zinc-800/35 dark:active:bg-zinc-800/45"
                   >
                     <td className="px-4 py-2.5 font-medium">{r.name}</td>
                     <td className="px-4 py-2.5 font-mono text-[11px] text-[color:var(--color-muted-foreground)]">
@@ -1280,7 +1306,7 @@ export default function InvestimentiClient() {
                         </button>
                       </div>
                     </td>
-                  </tr>
+                  </MotionTableRow>
                   );
                 })}
               </tbody>
@@ -1288,8 +1314,10 @@ export default function InvestimentiClient() {
           </div>
         )}
       </section>
+      </FadeUpChild>
 
       {rowsWithMaturity.length > 0 ? (
+        <FadeUpChild>
         <section className="space-y-3">
           <h2 className="text-[15px] font-semibold px-1">
             Vincolo bonus e scadenza
@@ -1304,7 +1332,10 @@ export default function InvestimentiClient() {
                   ? String(r.maturity_date).slice(0, 10)
                   : "";
               return (
-                <div key={r.id} className="card-surface p-5 space-y-3">
+                <div
+                  key={r.id}
+                  className="card-surface space-y-3 rounded-2xl border border-zinc-800/20 p-5 dark:border-zinc-800/45"
+                >
                   <div className="flex flex-wrap items-start justify-between gap-2">
                     <div>
                       <p className="text-[13px] font-semibold">{r.name}</p>
@@ -1365,9 +1396,11 @@ export default function InvestimentiClient() {
             })}
           </div>
         </section>
+        </FadeUpChild>
       ) : null}
 
-      <section className="card-surface p-6 space-y-4">
+      <FadeUpChild>
+      <section className="card-surface space-y-4 rounded-2xl border border-zinc-800/20 p-6 dark:border-zinc-800/45">
         <h2 className="text-[15px] font-semibold">Proiezione (solo simulazione)</h2>
         <p className="text-[12px] text-[color:var(--color-muted-foreground)] leading-relaxed">
           I numeri sotto sono calcolati in modo **deterministico** nell&apos;app
@@ -1443,7 +1476,7 @@ export default function InvestimentiClient() {
               Capitale iniziale scenario:
             </span>{" "}
             <span className="font-semibold tabular-nums">
-              {formatCurrency(scenarioPrincipal)}
+              <CurrencyCounter value={scenarioPrincipal} />
             </span>
           </p>
           {scenario ? (
@@ -1453,7 +1486,7 @@ export default function InvestimentiClient() {
                   Valore finale stimato:
                 </span>{" "}
                 <span className="font-semibold tabular-nums text-[color:var(--color-accent)]">
-                  {formatCurrency(scenario.endValue)}
+                  <CurrencyCounter value={scenario.endValue} />
                 </span>
               </p>
               <p>
@@ -1461,7 +1494,7 @@ export default function InvestimentiClient() {
                   Versamenti cumulati nel periodo:
                 </span>{" "}
                 <span className="font-medium tabular-nums">
-                  {formatCurrency(scenario.totalContributions)}
+                  <CurrencyCounter value={scenario.totalContributions} />
                 </span>
               </p>
               <p>
@@ -1469,7 +1502,7 @@ export default function InvestimentiClient() {
                   Effetto rendimento (stima):
                 </span>{" "}
                 <span className="font-medium tabular-nums">
-                  {formatCurrency(scenario.marketComponent)}
+                  <CurrencyCounter value={scenario.marketComponent} />
                 </span>
               </p>
             </>
@@ -1507,6 +1540,8 @@ export default function InvestimentiClient() {
           </div>
         ) : null}
       </section>
+      </FadeUpChild>
+      </FadeUpStagger>
     </div>
   );
 }

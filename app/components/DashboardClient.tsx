@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { AlertCircle, Download, Loader2 } from "lucide-react";
+import { AlertCircle, Download } from "lucide-react";
 import { toast } from "sonner";
 import SummaryCards from "./SummaryCards";
 import TransactionsTable from "./TransactionsTable";
@@ -69,6 +69,8 @@ import {
 } from "@/lib/export-transactions-csv";
 import { downloadTextFile } from "@/lib/download-text-file";
 import { REFETCH_ACCOUNTS_EVENT } from "@/lib/cash-wallet";
+import TransactionsTableSkeleton from "./premium/TransactionsTableSkeleton";
+import { FadeUpChild, FadeUpStagger } from "./premium/motion-primitives";
 
 type Props = {
   /** Mese corrente (1° — oggi) serializzato dal server per idratazione coerente. */
@@ -1485,47 +1487,56 @@ export default function DashboardClient({
   ]);
 
   return (
-    <div
+    <FadeUpStagger
       className={`space-y-8${selectedIds.size > 0 ? " pt-14" : ""}`}
     >
       {!configured ? (
-        <div className="card-surface flex items-start gap-3 p-4 text-[13px]">
-          <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-[color:var(--color-accent)]" />
-          <p className="text-[color:var(--color-muted-foreground)]">
-            Supabase non è configurato: stai vedendo dati di esempio. Imposta{" "}
-            <code className="font-mono">NEXT_PUBLIC_SUPABASE_URL</code> e{" "}
-            <code className="font-mono">NEXT_PUBLIC_SUPABASE_ANON_KEY</code> in{" "}
-            <code className="font-mono">.env.local</code> per abilitare il
-            salvataggio reale.
-          </p>
-        </div>
+        <FadeUpChild>
+          <div className="card-surface flex items-start gap-3 rounded-2xl border border-zinc-800/20 p-4 text-[13px] dark:border-zinc-800/40">
+            <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-[color:var(--color-accent)]" />
+            <p className="text-[color:var(--color-muted-foreground)]">
+              Supabase non è configurato: stai vedendo dati di esempio. Imposta{" "}
+              <code className="font-mono">NEXT_PUBLIC_SUPABASE_URL</code> e{" "}
+              <code className="font-mono">NEXT_PUBLIC_SUPABASE_ANON_KEY</code> in{" "}
+              <code className="font-mono">.env.local</code> per abilitare il
+              salvataggio reale.
+            </p>
+          </div>
+        </FadeUpChild>
       ) : null}
 
       {error ? (
-        <div className="card-surface flex items-start gap-3 border-[color:var(--color-expense)]/30 p-4 text-[13px] text-[color:var(--color-expense)]">
-          <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
-          <p>Errore nel caricamento: {error}</p>
-        </div>
+        <FadeUpChild>
+          <div className="card-surface flex items-start gap-3 rounded-2xl border border-[color:var(--color-expense)]/30 p-4 text-[13px] text-[color:var(--color-expense)]">
+            <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+            <p>Errore nel caricamento: {error}</p>
+          </div>
+        </FadeUpChild>
       ) : null}
 
-      <SummaryCards
-        summary={summary}
-        periodLabel={periodHeading}
-        pocketBalance={pocketBalance}
-        previous={previousSummary}
-      />
+      <FadeUpChild>
+        <SummaryCards
+          summary={summary}
+          periodLabel={periodHeading}
+          pocketBalance={pocketBalance}
+          previous={previousSummary}
+        />
+      </FadeUpChild>
 
-      <AccountsSection
-        accounts={accountsDisplay}
-        loading={loadingAccounts}
-        onAdd={() => setConnectOpen(true)}
-        onSync={handleSync}
-        onEdit={(acc) => setEditingAccount(acc)}
-        onCleanupHistory={configured ? handleCleanupHistory : undefined}
-        cleaningHistory={cleaningHistory}
-        syncingAccountIds={syncingIds}
-      />
+      <FadeUpChild>
+        <AccountsSection
+          accounts={accountsDisplay}
+          loading={loadingAccounts}
+          onAdd={() => setConnectOpen(true)}
+          onSync={handleSync}
+          onEdit={(acc) => setEditingAccount(acc)}
+          onCleanupHistory={configured ? handleCleanupHistory : undefined}
+          cleaningHistory={cleaningHistory}
+          syncingAccountIds={syncingIds}
+        />
+      </FadeUpChild>
 
+      <FadeUpChild>
       <div className="flex flex-col items-stretch gap-3 md:flex-row md:items-start">
         <div className="min-w-0 flex-1 space-y-3">
           <SmartSearchBar active={activeQuery} onApply={setActiveQuery} />
@@ -1558,17 +1569,18 @@ export default function DashboardClient({
           </button>
         </div>
       </div>
+      </FadeUpChild>
 
+      <FadeUpChild>
       <AddTransaction
         accounts={accountsDisplay}
         tagSuggestions={distinctTagSuggestions}
       />
+      </FadeUpChild>
 
+      <FadeUpChild>
       {loading && displayed.length === 0 ? (
-        <div className="card-surface flex items-center justify-center gap-2 p-10 text-[13px] text-[color:var(--color-muted-foreground)]">
-          <Loader2 className="h-4 w-4 animate-spin" />
-          Caricamento transazioni…
-        </div>
+        <TransactionsTableSkeleton />
       ) : (
         <TransactionsTable
           transactions={displayed}
@@ -1585,7 +1597,9 @@ export default function DashboardClient({
           tagSuggestions={distinctTagSuggestions}
         />
       )}
+      </FadeUpChild>
 
+      <FadeUpChild>
       <BulkActionsBar
         count={selectedIds.size}
         accounts={accountsDisplay}
@@ -1599,8 +1613,11 @@ export default function DashboardClient({
         onAddTags={handleBulkAddTags}
         tagSuggestions={distinctTagSuggestions}
       />
+      </FadeUpChild>
 
+      <FadeUpChild>
       <AskAI transactions={displayed} dateRange={dateRange} />
+      </FadeUpChild>
 
       <EditTransactionModal
         transaction={editing}
@@ -1627,7 +1644,7 @@ export default function DashboardClient({
         open={connectOpen}
         onClose={() => setConnectOpen(false)}
       />
-    </div>
+    </FadeUpStagger>
   );
 }
 

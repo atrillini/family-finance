@@ -19,6 +19,7 @@ import {
 } from "@/lib/mock-data";
 import { isCashWalletAccount } from "@/lib/cash-wallet";
 import { formatRelativeShort } from "@/lib/format-relative-it";
+import SkeletonGlow from "./premium/SkeletonGlow";
 
 type Props = {
   accounts: Account[];
@@ -104,9 +105,9 @@ export default function AccountsSection({
       {loading && accounts.length === 0 ? (
         <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-4">
           {Array.from({ length: 4 }).map((_, i) => (
-            <div
+            <SkeletonGlow
               key={i}
-              className="card-surface h-[112px] animate-pulse bg-[color:var(--color-surface-muted)]/40"
+              className="card-surface h-[112px] rounded-2xl border border-zinc-800/15 dark:border-zinc-800/35"
             />
           ))}
         </div>
