@@ -40,6 +40,7 @@ import {
 import CurrencyCounter from "./premium/CurrencyCounter";
 import { FadeUpChild, FadeUpStagger } from "./premium/motion-primitives";
 import InvestimentiTableSkeleton from "./premium/InvestimentiTableSkeleton";
+import { useMinLoading } from "./premium/use-min-loading";
 
 const MotionTableRow = motion.tr;
 
@@ -88,6 +89,7 @@ export default function InvestimentiClient() {
   const [cashLedger, setCashLedger] = useState<Record<string, number>>({});
   const [rows, setRows] = useState<ManualInvestmentRow[]>([]);
   const [loading, setLoading] = useState(configured);
+  const loadingInvestUi = useMinLoading(loading);
   const [error, setError] = useState<string | null>(null);
   const [form, setForm] = useState<FormState>(() => emptyForm());
   const [saving, setSaving] = useState(false);
@@ -1180,7 +1182,7 @@ export default function InvestimentiClient() {
             Nuova posizione
           </button>
         </div>
-        {loading ? (
+        {loadingInvestUi ? (
           <InvestimentiTableSkeleton />
         ) : rows.length === 0 ? (
           <p className="px-5 py-10 text-center text-[13px] text-[color:var(--color-muted-foreground)]">

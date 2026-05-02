@@ -19,6 +19,7 @@ import DateRangePicker from "./DateRangePicker";
 import MonthNavigator from "./MonthNavigator";
 import BulkActionsBar from "./BulkActionsBar";
 import TransactionsTableSkeleton from "./premium/TransactionsTableSkeleton";
+import { useMinLoading } from "./premium/use-min-loading";
 import EditTransactionModal, {
   type EditTransactionPatch,
 } from "./EditTransactionModal";
@@ -107,6 +108,7 @@ export default function TransactionsClient({
   const [transactions, setTransactions] = useState<Transaction[]>(fallback);
   const [accounts, setAccounts] = useState<Account[]>(accountsFallback);
   const [loading, setLoading] = useState(configured);
+  const loadingTransactionsUi = useMinLoading(loading);
   const [error, setError] = useState<string | null>(null);
   const [editing, setEditing] = useState<Transaction | null>(null);
   const [recategorizingIds, setRecategorizingIds] = useState<Set<string>>(
@@ -1027,7 +1029,7 @@ export default function TransactionsClient({
         exportDisabled={csvExportRowCount === 0}
       />
 
-      {loading && displayed.length === 0 ? (
+      {loadingTransactionsUi ? (
         <TransactionsTableSkeleton />
       ) : (
         <TransactionsTable

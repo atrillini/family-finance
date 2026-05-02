@@ -71,6 +71,7 @@ import { downloadTextFile } from "@/lib/download-text-file";
 import { REFETCH_ACCOUNTS_EVENT } from "@/lib/cash-wallet";
 import TransactionsTableSkeleton from "./premium/TransactionsTableSkeleton";
 import { FadeUpChild, FadeUpStagger } from "./premium/motion-primitives";
+import { useMinLoading } from "./premium/use-min-loading";
 
 type Props = {
   /** Mese corrente (1° — oggi) serializzato dal server per idratazione coerente. */
@@ -95,6 +96,8 @@ export default function DashboardClient({
 
   const [loading, setLoading] = useState(configured);
   const [loadingAccounts, setLoadingAccounts] = useState(configured);
+  const loadingTransactionsUi = useMinLoading(loading);
+  const loadingAccountsUi = useMinLoading(loadingAccounts);
   const [error, setError] = useState<string | null>(null);
   const [activeQuery, setActiveQuery] = useState<ParsedQuery | null>(null);
   const [editing, setEditing] = useState<Transaction | null>(null);
@@ -1526,7 +1529,7 @@ export default function DashboardClient({
       <FadeUpChild>
         <AccountsSection
           accounts={accountsDisplay}
-          loading={loadingAccounts}
+          loading={loadingAccountsUi}
           onAdd={() => setConnectOpen(true)}
           onSync={handleSync}
           onEdit={(acc) => setEditingAccount(acc)}
@@ -1579,7 +1582,7 @@ export default function DashboardClient({
       </FadeUpChild>
 
       <FadeUpChild>
-      {loading && displayed.length === 0 ? (
+      {loadingTransactionsUi ? (
         <TransactionsTableSkeleton />
       ) : (
         <TransactionsTable

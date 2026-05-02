@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 import { getSupabaseClient, isSupabaseConfigured } from "@/lib/supabase";
 import SkeletonGlow from "./premium/SkeletonGlow";
+import { useMinLoading } from "./premium/use-min-loading";
 import type { RealtimeChannel } from "@supabase/supabase-js";
 
 type NotifRow = {
@@ -54,6 +55,7 @@ export default function NotificationsBell() {
   const reduceMotion = useReducedMotion();
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
+  const panelLoadingUi = useMinLoading(loading);
   const [items, setItems] = useState<NotifRow[]>([]);
   const [unread, setUnread] = useState(0);
   const [bellWiggle, setBellWiggle] = useState(0);
@@ -238,7 +240,7 @@ export default function NotificationsBell() {
           </div>
 
           <div className="max-h-[min(70vh,420px)] overflow-y-auto">
-            {loading ? (
+            {panelLoadingUi ? (
               <div className="space-y-3 px-3 py-6">
                 {Array.from({ length: 5 }).map((_, i) => (
                   <div key={i} className="flex gap-2.5">

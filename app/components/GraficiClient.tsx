@@ -49,6 +49,7 @@ import {
 import { normalizeTagLabel } from "@/lib/tag-colors";
 import ChartAreaSkeleton from "./premium/ChartAreaSkeleton";
 import SkeletonGlow from "./premium/SkeletonGlow";
+import { useMinLoading } from "./premium/use-min-loading";
 
 /** Colori espliciti (hex) per contrasto su sfondo scuro/chiaro — Tremor Area. */
 const CHART_AREA_COLORS = ["#3b82f6", "#94a3b8"] as const;
@@ -107,6 +108,9 @@ export default function GraficiClient({
   const [sankeyPinnedTags, setSankeyPinnedTags] = useState<string[]>([]);
   const [sankeyPrefsHydrated, setSankeyPrefsHydrated] = useState(false);
   const [sankeyTagDraft, setSankeyTagDraft] = useState("");
+
+  const loadingUi = useMinLoading(loading);
+  const insightLoadingUi = useMinLoading(insightLoading);
 
   const rangeKey = dateRange
     ? `${dateRange.from.getTime()}|${(dateRange.to ?? dateRange.from).getTime()}`
@@ -434,7 +438,7 @@ export default function GraficiClient({
           <span className="font-medium">precedente</span> = periodo a parità di
           giorni prima.
         </Text>
-        {loading && chartData.length === 0 ? (
+        {loadingUi ? (
           <ChartAreaSkeleton className="mt-8 py-2" />
         ) : chartData.length === 0 ? (
           <p className="mt-6 text-[13px] text-tremor-content-subtle">
@@ -477,7 +481,7 @@ export default function GraficiClient({
             })}
           </Text>
         ) : null}
-        {loading && weeklyChartData.length === 0 ? (
+        {loadingUi ? (
           <ChartAreaSkeleton className="mt-8 py-2" />
         ) : weeklyChartData.length === 0 ? (
           <p className="mt-6 text-[13px] text-tremor-content-subtle">
@@ -607,7 +611,7 @@ export default function GraficiClient({
           </div>
         ) : null}
 
-        {loading ? (
+        {loadingUi ? (
           <div className="mt-8 flex min-h-[280px] flex-col justify-center gap-4 py-4">
             <SkeletonGlow className="h-4 w-48 max-w-full rounded-md" />
             <SkeletonGlow className="min-h-[220px] w-full flex-1 rounded-2xl border border-zinc-800/15 dark:border-zinc-800/35" />
@@ -647,7 +651,7 @@ export default function GraficiClient({
                   disabled={insightLoading || loading}
                   className="inline-flex shrink-0 items-center justify-center gap-2 rounded-full border border-[color:var(--color-border)] px-4 py-2 text-[12.5px] font-medium transition-colors hover:border-[color:var(--color-accent)] hover:bg-[color:var(--color-accent)]/10 hover:text-[color:var(--color-accent)] disabled:cursor-not-allowed disabled:opacity-50"
                 >
-                  {insightLoading ? (
+                  {insightLoadingUi ? (
                     <Loader2 className="h-4 w-4 animate-spin" />
                   ) : (
                     <Sparkles className="h-4 w-4" />
@@ -659,7 +663,7 @@ export default function GraficiClient({
                 L&apos;insight non parte da solo al cambio date: usa il pulsante
                 quando vuoi aggiornarlo.
               </Text>
-              {insightLoading ? (
+              {insightLoadingUi ? (
                 <div className="mt-4 flex items-center gap-2 text-[13px] text-tremor-content-subtle">
                   <Loader2 className="h-4 w-4 animate-spin" />
                   Generazione in corso…
@@ -675,7 +679,7 @@ export default function GraficiClient({
                     : "Clicca «Genera insight» per la sintesi locale (demo, senza server)."}
                 </p>
               )}
-              {!insightLoading && insightSource ? (
+              {!insightLoadingUi && insightSource ? (
                 <Text className="mt-2 text-[11px] text-tremor-content-subtle">
                   Fonte: {insightSource === "gemini" ? "Gemini" : "regole locali"}
                 </Text>
