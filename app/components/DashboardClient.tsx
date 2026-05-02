@@ -71,7 +71,13 @@ import { downloadTextFile } from "@/lib/download-text-file";
 import { REFETCH_ACCOUNTS_EVENT } from "@/lib/cash-wallet";
 import TransactionsTableSkeleton from "./premium/TransactionsTableSkeleton";
 import { FadeUpChild, FadeUpStagger } from "./premium/motion-primitives";
-import { useMinLoading } from "./premium/use-min-loading";
+import {
+  MIN_LOADING_SKELETON_MS,
+  useMinLoading,
+} from "./premium/use-min-loading";
+
+/** Skeleton tabella al primo mount (solo con Supabase), ~stessa durata min del resto UI. */
+const DASHBOARD_TABLE_INTRO_MS = MIN_LOADING_SKELETON_MS;
 
 type Props = {
   /** Mese corrente (1° — oggi) serializzato dal server per idratazione coerente. */
@@ -98,6 +104,10 @@ export default function DashboardClient({
   const [loadingAccounts, setLoadingAccounts] = useState(configured);
   const loadingTransactionsUi = useMinLoading(loading);
   const loadingAccountsUi = useMinLoading(loadingAccounts);
+  /** Primo mount: mostra skeleton tabella almeno `DASHBOARD_TABLE_INTRO_MS` se `configured`. */
+  const [tableFirstMountPeek, setTableFirstMountPeek] = useState(() =>
+    Boolean(configured)
+  );
   const [error, setError] = useState<string | null>(null);
   const [activeQuery, setActiveQuery] = useState<ParsedQuery | null>(null);
   const [editing, setEditing] = useState<Transaction | null>(null);
@@ -120,6 +130,17 @@ export default function DashboardClient({
 
   // Testo di ricerca dell'header (condiviso via context).
   const { query: headerQuery, setQuery: setHeaderQuery } = useHeaderSearch();
+
+  useEffect(() => {
+    if (!configured) {
+      setTableFirstMountPeek(false);
+      return;
+    }
+    const id = window.setTimeout(() => {
+      setTableFirstMountPeek(false);
+    }, DASHBOARD_TABLE_INTRO_MS);
+    return () => window.clearTimeout(id);
+  }, [configured]);
 
   useEffect(() => {
     if (!configured) return;
@@ -1582,7 +1603,7 @@ export default function DashboardClient({
       </FadeUpChild>
 
       <FadeUpChild>
-      {loadingTransactionsUi ? (
+      {loadingTransactionsUi || tableFirstMountPeek ? (
         <TransactionsTableSkeleton />
       ) : (
         <TransactionsTable
