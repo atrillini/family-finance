@@ -35,8 +35,9 @@ import {
 import { normalizeTagLabel } from "@/lib/tag-colors";
 import {
   summarizeTaggedFlows,
-  deltaPctRefToCmp,
+  deltaPctEarlyToLate,
   formatDeltaPctIt,
+  type TaggedFlowTotals,
 } from "@/lib/tag-set-analysis";
 import { isTransactionVisible } from "@/lib/transaction-visibility";
 
@@ -74,6 +75,42 @@ function formatMonthInputValue(d: Date): string {
 function clampInt(n: number, lo: number, hi: number): number {
   if (!Number.isFinite(n)) return lo;
   return Math.min(hi, Math.max(lo, Math.trunc(n)));
+}
+
+/** Ordina i due periodi per data di inizio (poi fine): colonna Δ = più recente − più vecchio. */
+function buildChronology(
+  refRange: DateRange,
+  cmpRange: DateRange,
+  refTotals: TaggedFlowTotals,
+  cmpTotals: TaggedFlowTotals
+): {
+  earlyRange: DateRange;
+  lateRange: DateRange;
+  earlyTotals: TaggedFlowTotals;
+  lateTotals: TaggedFlowTotals;
+} {
+  const r0 = startOfDay(refRange.from).getTime();
+  const c0 = startOfDay(cmpRange.from).getTime();
+  const rEnd = endOfDay(refRange.to ?? refRange.from).getTime();
+  const cEnd = endOfDay(cmpRange.to ?? cmpRange.from).getTime();
+
+  const refFirst =
+    r0 < c0 || (r0 === c0 && rEnd <= cEnd);
+
+  if (refFirst) {
+    return {
+      earlyRange: refRange,
+      lateRange: cmpRange,
+      earlyTotals: refTotals,
+      lateTotals: cmpTotals,
+    };
+  }
+  return {
+    earlyRange: cmpRange,
+    lateRange: refRange,
+    earlyTotals: cmpTotals,
+    lateTotals: refTotals,
+  };
 }
 
 type Props = {
@@ -122,7 +159,8 @@ export default function AnalisiTagClient({
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [tagDraft, setTagDraft] = useState("");
   const [tagPrefsHydrated, setTagPrefsHydrated] = useState(false);
-  const [sankeyPeriod, setSankeyPeriod] = useState<"ref" | "cmp">("ref");
+  /** Quale delle due finestre cronologiche mostrare nel Sankey. */
+  const [sankeyPeriod, setSankeyPeriod] = useState<"early" | "late">("late");
 
   const loadingUi = useMinLoading(loading);
 
@@ -256,10 +294,17 @@ export default function AnalisiTagClient({
     return summarizeTaggedFlows(visibleTransactions, cmpRange, selectedTags);
   }, [visibleTransactions, cmpRange, selectedTags]);
 
-  const refNet = refTotals.income - refTotals.expense;
-  const cmpNet = cmpTotals.income - cmpTotals.expense;
+  const chronology = useMemo(() => {
+    if (!refRange || !cmpRange) return null;
+    return buildChronology(refRange, cmpRange, refTotals, cmpTotals);
+  }, [refRange, cmpRange, refTotals, cmpTotals]);
 
-  const sankeyRange = sankeyPeriod === "ref" ? refRange : cmpRange;
+  const sankeyRange =
+    chronology == null
+      ? null
+      : sankeyPeriod === "early"
+        ? chronology.earlyRange
+        : chronology.lateRange;
   const sankeyData = useMemo(() => {
     if (!sankeyRange || selectedTags.length === 0) return null;
     return buildPeriodSankeyGrouped(visibleTransactions, sankeyRange, {
@@ -290,9 +335,9 @@ export default function AnalisiTagClient({
     (!refRange || !cmpRange);
 
   const pctCls = useCallback(
-    (kind: "income" | "expense" | "net", ref: number, cmp: number) => {
-      if (ref === cmp) return "";
-      const up = cmp > ref;
+    (kind: "income" | "expense" | "net", early: number, late: number) => {
+      if (early === late) return "";
+      const up = late > early;
       if (kind === "income") {
         return up
           ? "text-emerald-600 dark:text-emerald-400"
@@ -416,8 +461,10 @@ export default function AnalisiTagClient({
       <Card>
         <Title>Periodi</Title>
         <Text className="mt-1">
-          Confronto tra periodo di riferimento e periodo di confronto. Per le
-          settimane si usa la numerazione ISO (lun–dom).
+          Scegli due periodi in qualsiasi ordine: in tabella vengono ordinati dal
+          più vecchio al più recente e il Δ è sempre{" "}
+          <span className="font-medium">recente − precedente</span>. Settimana
+          ISO (lun–dom).
         </Text>
         <div className="mt-4 inline-flex flex-wrap rounded-full border border-[color:var(--color-border)] bg-[color:var(--color-surface-muted)]/40 p-0.5">
           {modeBtn("month", "Mese")}
@@ -429,7 +476,7 @@ export default function AnalisiTagClient({
           <div className="mt-4 grid gap-4 sm:grid-cols-2">
             <label className="block space-y-1.5">
               <span className="text-[12px] font-medium text-tremor-content-subtle">
-                Riferimento
+                Primo periodo
               </span>
               <input
                 type="month"
@@ -443,7 +490,7 @@ export default function AnalisiTagClient({
             </label>
             <label className="block space-y-1.5">
               <span className="text-[12px] font-medium text-tremor-content-subtle">
-                Confronto
+                Secondo periodo
               </span>
               <input
                 type="month"
@@ -469,7 +516,7 @@ export default function AnalisiTagClient({
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-2 rounded-xl border border-[color:var(--color-border)] p-3">
                 <p className="text-[12px] font-medium text-tremor-content-subtle">
-                  Riferimento
+                  Primo periodo
                 </p>
                 <div className="flex flex-wrap gap-2">
                   <label className="flex flex-col gap-1 text-[11px] text-tremor-content-subtle">
@@ -503,7 +550,7 @@ export default function AnalisiTagClient({
               </div>
               <div className="space-y-2 rounded-xl border border-[color:var(--color-border)] p-3">
                 <p className="text-[12px] font-medium text-tremor-content-subtle">
-                  Confronto
+                  Secondo periodo
                 </p>
                 <div className="flex flex-wrap gap-2">
                   <label className="flex flex-col gap-1 text-[11px] text-tremor-content-subtle">
@@ -543,13 +590,13 @@ export default function AnalisiTagClient({
           <div className="mt-4 grid gap-4 sm:grid-cols-2">
             <div className="space-y-2">
               <span className="text-[12px] font-medium text-tremor-content-subtle">
-                Riferimento
+                Primo periodo
               </span>
               <DateRangePicker value={customRef} onChange={setCustomRef} />
             </div>
             <div className="space-y-2">
               <span className="text-[12px] font-medium text-tremor-content-subtle">
-                Confronto
+                Secondo periodo
               </span>
               <DateRangePicker value={customCmp} onChange={setCustomCmp} />
             </div>
@@ -560,10 +607,13 @@ export default function AnalisiTagClient({
       <Card>
         <Title>Totali attribuiti al set di tag</Title>
         <Text className="mt-1 text-tremor-content-subtle">
-          Giroconti esclusi; transazioni nascoste escluse. Le percentuali
-          confrontano il periodo di confronto rispetto al riferimento:{" "}
-          <span className="font-medium">(confronto − riferimento) / riferimento</span>
-          . Se il riferimento è 0 e il confronto no, mostriamo{" "}
+          Giroconti esclusi; transazioni nascoste escluse. Le colonne sono in
+          ordine cronologico; Δ e Δ % usano sempre{" "}
+          <span className="font-medium">
+            (periodo più recente − periodo più vecchio)
+          </span>{" "}
+          e il denominatore è il valore del periodo più vecchio. Se quello è 0 e
+          il più recente no, mostriamo{" "}
           <span className="font-medium">Nuovo</span>.
         </Text>
         {loadingUi && selectedTags.length > 0 ? (
@@ -572,16 +622,30 @@ export default function AnalisiTagClient({
             <SkeletonGlow className="h-10 w-full rounded-lg" />
             <SkeletonGlow className="h-10 w-full rounded-lg" />
           </div>
-        ) : selectedTags.length === 0 || invalidWeek ? null : (
+        ) : selectedTags.length === 0 || invalidWeek || !chronology ? null : (
           <div className="mt-6 overflow-x-auto">
-            <table className="w-full min-w-[520px] border-collapse text-left text-[13px]">
+            <table className="w-full min-w-[560px] border-collapse text-left text-[13px]">
               <thead>
                 <tr className="border-b border-[color:var(--color-border)] text-tremor-content-subtle">
-                  <th className="py-2 pr-3 font-medium">Voce</th>
-                  <th className="py-2 pr-3 font-medium">Riferimento</th>
-                  <th className="py-2 pr-3 font-medium">Confronto</th>
-                  <th className="py-2 pr-3 font-medium">Δ</th>
-                  <th className="py-2 font-medium">Δ %</th>
+                  <th className="py-2 pr-3 font-medium align-bottom">Voce</th>
+                  <th className="py-2 pr-3 font-normal align-bottom">
+                    <div className="font-medium text-tremor-content-subtle">
+                      Precedente
+                    </div>
+                    <div className="mt-0.5 max-w-[180px] text-[10px] font-normal leading-snug text-tremor-content-subtle">
+                      {formatRangeLabel(chronology.earlyRange)}
+                    </div>
+                  </th>
+                  <th className="py-2 pr-3 font-normal align-bottom">
+                    <div className="font-medium text-tremor-content-subtle">
+                      Recente
+                    </div>
+                    <div className="mt-0.5 max-w-[180px] text-[10px] font-normal leading-snug text-tremor-content-subtle">
+                      {formatRangeLabel(chronology.lateRange)}
+                    </div>
+                  </th>
+                  <th className="py-2 pr-3 align-bottom font-medium">Δ</th>
+                  <th className="py-2 align-bottom font-medium">Δ %</th>
                 </tr>
               </thead>
               <tbody>
@@ -589,26 +653,30 @@ export default function AnalisiTagClient({
                   [
                     {
                       label: "Entrate",
-                      ref: refTotals.income,
-                      cmp: cmpTotals.income,
+                      early: chronology.earlyTotals.income,
+                      late: chronology.lateTotals.income,
                       kind: "income" as const,
                     },
                     {
                       label: "Uscite",
-                      ref: refTotals.expense,
-                      cmp: cmpTotals.expense,
+                      early: chronology.earlyTotals.expense,
+                      late: chronology.lateTotals.expense,
                       kind: "expense" as const,
                     },
                     {
                       label: "Netto",
-                      ref: refNet,
-                      cmp: cmpNet,
+                      early:
+                        chronology.earlyTotals.income -
+                        chronology.earlyTotals.expense,
+                      late:
+                        chronology.lateTotals.income -
+                        chronology.lateTotals.expense,
                       kind: "net" as const,
                     },
                   ] as const
                 ).map((row) => {
-                  const dAbs = row.cmp - row.ref;
-                  const dPct = deltaPctRefToCmp(row.ref, row.cmp);
+                  const dAbs = row.late - row.early;
+                  const dPct = deltaPctEarlyToLate(row.early, row.late);
                   return (
                     <tr
                       key={row.label}
@@ -616,15 +684,15 @@ export default function AnalisiTagClient({
                     >
                       <td className="py-2.5 pr-3 font-medium">{row.label}</td>
                       <td className="py-2.5 pr-3 tabular-nums">
-                        {formatCurrency(row.ref)}
+                        {formatCurrency(row.early)}
                       </td>
                       <td className="py-2.5 pr-3 tabular-nums">
-                        {formatCurrency(row.cmp)}
+                        {formatCurrency(row.late)}
                       </td>
                       <td
                         className={[
                           "py-2.5 pr-3 tabular-nums font-medium",
-                          pctCls(row.kind, row.ref, row.cmp),
+                          pctCls(row.kind, row.early, row.late),
                         ].join(" ")}
                       >
                         {dAbs === 0
@@ -634,7 +702,7 @@ export default function AnalisiTagClient({
                       <td
                         className={[
                           "py-2.5 tabular-nums font-medium",
-                          pctCls(row.kind, row.ref, row.cmp),
+                          pctCls(row.kind, row.early, row.late),
                         ].join(" ")}
                       >
                         {formatDeltaPctIt(dPct)}
@@ -651,33 +719,33 @@ export default function AnalisiTagClient({
       <Card className="overflow-visible">
         <Title>Sankey (stesso set di tag)</Title>
         <Text className="mt-1">
-          Stessa aggregazione dei grafici: passa tra riferimento e confronto per
-          il flusso entrate/uscite sui tag selezionati.
+          Stessa aggregazione dei grafici; il periodo segue l&apos;ordine cronologico
+          usato in tabella (precedente / recente).
         </Text>
         <div className="mt-3 inline-flex rounded-full border border-[color:var(--color-border)] bg-[color:var(--color-surface-muted)]/40 p-0.5">
           <button
             type="button"
-            onClick={() => setSankeyPeriod("ref")}
+            onClick={() => setSankeyPeriod("early")}
             className={[
               "rounded-full px-3 py-1 text-[12px] font-medium transition-colors",
-              sankeyPeriod === "ref"
+              sankeyPeriod === "early"
                 ? "bg-[color:var(--color-surface)] text-[color:var(--color-foreground)] shadow-sm"
                 : "text-tremor-content-subtle hover:text-[color:var(--color-foreground)]",
             ].join(" ")}
           >
-            Riferimento
+            Precedente
           </button>
           <button
             type="button"
-            onClick={() => setSankeyPeriod("cmp")}
+            onClick={() => setSankeyPeriod("late")}
             className={[
               "rounded-full px-3 py-1 text-[12px] font-medium transition-colors",
-              sankeyPeriod === "cmp"
+              sankeyPeriod === "late"
                 ? "bg-[color:var(--color-surface)] text-[color:var(--color-foreground)] shadow-sm"
                 : "text-tremor-content-subtle hover:text-[color:var(--color-foreground)]",
             ].join(" ")}
           >
-            Confronto
+            Recente
           </button>
         </div>
         {sankeyRange ? (

@@ -56,12 +56,16 @@ export function summarizeTaggedFlows(
   return { income, expense };
 }
 
-/** Variazione % da periodo di riferimento al periodo di confronto: (cmp − ref) / ref. */
-export function deltaPctRefToCmp(ref: number, cmp: number): DeltaPctResult {
-  if (!Number.isFinite(ref) || !Number.isFinite(cmp)) return { kind: "na" };
-  if (ref === 0 && cmp === 0) return { kind: "na" };
-  if (ref === 0) return { kind: "new" };
-  return { kind: "pct", value: ((cmp - ref) / ref) * 100 };
+/**
+ * Variazione % da periodo più vecchio a più recente: (recente − vecchio) / vecchio.
+ * I parametri sono valori monetari dopo l’aggregazione sui tag, non sono legati ai
+ * campi UI "ref/cmp".
+ */
+export function deltaPctEarlyToLate(early: number, late: number): DeltaPctResult {
+  if (!Number.isFinite(early) || !Number.isFinite(late)) return { kind: "na" };
+  if (early === 0 && late === 0) return { kind: "na" };
+  if (early === 0) return { kind: "new" };
+  return { kind: "pct", value: ((late - early) / early) * 100 };
 }
 
 export function formatDeltaPctIt(d: DeltaPctResult): string {
