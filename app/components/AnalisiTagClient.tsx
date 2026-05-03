@@ -269,16 +269,32 @@ export default function AnalisiTagClient({
     return customCmp;
   }, [periodMode, monthCmpYm, weekCmpYear, weekCmpNum, customCmp]);
 
-  const envelopeRange = useMemo(() => {
+  /**
+   * Periodo caricato da Supabase (mock). In modalità Mese include la striscia
+   * gennaio→mese più recente, così colonne intermedi non sono tutte zero.
+   */
+  const dataEnvelope = useMemo(() => {
     if (!refRange || !cmpRange) return null;
-    return mergedEnvelope(refRange, cmpRange);
-  }, [refRange, cmpRange]);
+    const pairOnly = mergedEnvelope(refRange, cmpRange);
+    if (periodMode !== "month") return pairOnly;
+
+    const r0 = startOfDay(refRange.from).getTime();
+    const c0 = startOfDay(cmpRange.from).getTime();
+    const lateMonth = r0 <= c0 ? cmpRange : refRange;
+    const minY = Math.min(
+      refRange.from.getFullYear(),
+      cmpRange.from.getFullYear()
+    );
+    const runwayStart = startOfDay(startOfMonth(new Date(minY, 0, 1)));
+    const runwayEnd = endOfDay(lateMonth.to ?? lateMonth.from);
+    return mergedEnvelope(pairOnly, { from: runwayStart, to: runwayEnd });
+  }, [refRange, cmpRange, periodMode]);
 
   const envelopeKey = useMemo(() => {
-    if (!envelopeRange) return "";
-    const b = rangeToIsoBounds(envelopeRange);
+    if (!dataEnvelope) return "";
+    const b = rangeToIsoBounds(dataEnvelope);
     return `${b.fromIso}|${b.toIso}`;
-  }, [envelopeRange]);
+  }, [dataEnvelope]);
 
   useEffect(() => {
     if (!configured) return;
@@ -286,7 +302,7 @@ export default function AnalisiTagClient({
     let cancelled = false;
 
     async function load() {
-      if (!envelopeRange) {
+      if (!dataEnvelope) {
         if (!cancelled) {
           setTransactions([]);
           setLoading(false);
@@ -296,7 +312,7 @@ export default function AnalisiTagClient({
       }
       setLoading(true);
       try {
-        const b = rangeToIsoBounds(envelopeRange);
+        const b = rangeToIsoBounds(dataEnvelope);
         const data = await fetchTransactionsBatched(supabase, {
           dateFromIso: b.fromIso,
           dateToIso: b.toIso,
@@ -319,7 +335,7 @@ export default function AnalisiTagClient({
     return () => {
       cancelled = true;
     };
-  }, [configured, envelopeKey, envelopeRange]);
+  }, [configured, envelopeKey, dataEnvelope]);
 
   const visibleTransactions = useMemo(
     () => transactions.filter(isTransactionVisible),
@@ -328,10 +344,10 @@ export default function AnalisiTagClient({
 
   const tagsInEnvelope = useMemo(
     () =>
-      envelopeRange
-        ? collectTagsInRange(visibleTransactions, envelopeRange)
+      dataEnvelope
+        ? collectTagsInRange(visibleTransactions, dataEnvelope)
         : [],
-    [visibleTransactions, envelopeRange]
+    [visibleTransactions, dataEnvelope]
   );
 
   const refTotals = useMemo(() => {
