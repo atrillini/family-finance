@@ -2,8 +2,10 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
+  eachMonthOfInterval,
   endOfDay,
   endOfMonth,
+  format,
   getISOWeek,
   getISOWeekYear,
   startOfDay,
@@ -11,6 +13,7 @@ import {
   subMonths,
   subWeeks,
 } from "date-fns";
+import { it as itLocale } from "date-fns/locale";
 import { AlertCircle, Loader2 } from "lucide-react";
 import { Card, Text, Title } from "@tremor/react";
 import DateRangePicker from "./DateRangePicker";
@@ -75,6 +78,57 @@ function formatMonthInputValue(d: Date): string {
 function clampInt(n: number, lo: number, hi: number): number {
   if (!Number.isFinite(n)) return lo;
   return Math.min(hi, Math.max(lo, Math.trunc(n)));
+}
+
+function sameCalendarMonth(a: Date, b: Date): boolean {
+  return (
+    a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth()
+  );
+}
+
+/**
+ * Mesi di calendario da gennaio dell'anno minimo toccato fino al mese del periodo più recente.
+ */
+function monthComparisonContextStrip(
+  chronology: {
+    earlyRange: DateRange;
+    lateRange: DateRange;
+  },
+  visibleTransactions: readonly Transaction[],
+  selectedTags: readonly string[]
+): { range: DateRange; label: string; isEarly: boolean; isLate: boolean; totals: TaggedFlowTotals }[] {
+  const earlyStart = chronology.earlyRange.from;
+  const lateStart = chronology.lateRange.from;
+  const minYear = Math.min(
+    earlyStart.getFullYear(),
+    lateStart.getFullYear()
+  );
+  const gridStart = startOfMonth(new Date(minYear, 0, 1));
+  const gridEndMonth = startOfMonth(lateStart);
+
+  const months = eachMonthOfInterval({
+    start: gridStart,
+    end: gridEndMonth,
+  });
+
+  return months.map((monthStart) => {
+    const from = startOfDay(startOfMonth(monthStart));
+    const to = endOfDay(endOfMonth(monthStart));
+    const range: DateRange = { from, to };
+    const totals = summarizeTaggedFlows(
+      visibleTransactions,
+      range,
+      selectedTags
+    );
+    const label = format(monthStart, "LLL yy", { locale: itLocale });
+    return {
+      range,
+      label,
+      isEarly: sameCalendarMonth(monthStart, earlyStart),
+      isLate: sameCalendarMonth(monthStart, lateStart),
+      totals,
+    };
+  });
 }
 
 /** Ordina i due periodi per data di inizio (poi fine): colonna Δ = più recente − più vecchio. */
@@ -298,6 +352,17 @@ export default function AnalisiTagClient({
     if (!refRange || !cmpRange) return null;
     return buildChronology(refRange, cmpRange, refTotals, cmpTotals);
   }, [refRange, cmpRange, refTotals, cmpTotals]);
+
+  const monthlyContextSlices = useMemo(() => {
+    if (periodMode !== "month" || !chronology || selectedTags.length === 0) {
+      return null;
+    }
+    return monthComparisonContextStrip(
+      chronology,
+      visibleTransactions,
+      selectedTags
+    );
+  }, [periodMode, chronology, visibleTransactions, selectedTags]);
 
   const sankeyRange =
     chronology == null
@@ -607,14 +672,16 @@ export default function AnalisiTagClient({
       <Card>
         <Title>Totali attribuiti al set di tag</Title>
         <Text className="mt-1 text-tremor-content-subtle">
-          Giroconti esclusi; transazioni nascoste escluse. Le colonne sono in
-          ordine cronologico; Δ e Δ % usano sempre{" "}
+          Giroconti esclusi; transazioni nascoste escluse.
+          {periodMode === "month"
+            ? " Con due mesi selezionati vedrai da gennaio dell’anno più vecchio coinvolto fino al mese più recente; le colonne evidenziate sono i due mesi del confronto."
+            : null}{" "}
+          Le colonne Δ / Δ % sono sempre{" "}
           <span className="font-medium">
-            (periodo più recente − periodo più vecchio)
-          </span>{" "}
-          e il denominatore è il valore del periodo più vecchio. Se quello è 0 e
-          il più recente no, mostriamo{" "}
-          <span className="font-medium">Nuovo</span>.
+            (recente − precedente)
+          </span>
+          , denominatore sul periodo più vecchio dei due. Se quello è 0 e il più
+          recente no, mostriamo <span className="font-medium">Nuovo</span>.
         </Text>
         {loadingUi && selectedTags.length > 0 ? (
           <div className="mt-6 space-y-3">
@@ -622,7 +689,131 @@ export default function AnalisiTagClient({
             <SkeletonGlow className="h-10 w-full rounded-lg" />
             <SkeletonGlow className="h-10 w-full rounded-lg" />
           </div>
-        ) : selectedTags.length === 0 || invalidWeek || !chronology ? null : (
+        ) : selectedTags.length === 0 || invalidWeek || !chronology ? null : monthlyContextSlices ? (
+          <div className="mt-6 overflow-x-auto">
+            <table className="w-full min-w-[720px] border-collapse text-left text-[13px]">
+              <thead>
+                <tr className="border-b border-[color:var(--color-border)] text-tremor-content-subtle">
+                  <th className="sticky left-0 z-[1] bg-[color:var(--color-surface)] py-2 pr-3 font-medium align-bottom shadow-[2px_0_8px_-4px_rgba(0,0,0,0.15)]">
+                    Voce
+                  </th>
+                  {monthlyContextSlices.map((slice, idx) => {
+                    const mark =
+                      slice.isEarly && slice.isLate
+                        ? "confronto"
+                        : slice.isEarly
+                          ? "precedente"
+                          : slice.isLate
+                            ? "recente"
+                            : null;
+                    return (
+                      <th
+                        key={`${slice.range.from.getTime()}-${idx}`}
+                        title={formatRangeLabel(slice.range)}
+                        className={[
+                          "whitespace-nowrap px-2 py-2 align-bottom font-normal text-tremor-content-subtle",
+                          slice.isEarly || slice.isLate
+                            ? "border-x border-[color:var(--color-accent)]/25 bg-[color:var(--color-accent)]/[0.06]"
+                            : "",
+                        ].join(" ")}
+                      >
+                        <div className="text-[13px] font-medium capitalize tracking-tight text-[color:var(--color-foreground)]">
+                          {slice.label}
+                        </div>
+                        {mark ? (
+                          <div className="mt-0.5 text-[10px] font-medium uppercase tracking-wide text-[color:var(--color-accent)]">
+                            {mark}
+                          </div>
+                        ) : null}
+                      </th>
+                    );
+                  })}
+                  <th className="border-l border-[color:var(--color-border)] bg-[color:var(--color-surface-muted)]/30 py-2 pl-3 pr-2 align-bottom font-medium">
+                    Δ
+                  </th>
+                  <th className="bg-[color:var(--color-surface-muted)]/30 py-2 pl-2 align-bottom font-medium">
+                    Δ %
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {(
+                  [
+                    {
+                      label: "Entrate",
+                      early: chronology.earlyTotals.income,
+                      late: chronology.lateTotals.income,
+                      kind: "income" as const,
+                      val: (t: TaggedFlowTotals) => t.income,
+                    },
+                    {
+                      label: "Uscite",
+                      early: chronology.earlyTotals.expense,
+                      late: chronology.lateTotals.expense,
+                      kind: "expense" as const,
+                      val: (t: TaggedFlowTotals) => t.expense,
+                    },
+                    {
+                      label: "Netto",
+                      early:
+                        chronology.earlyTotals.income -
+                        chronology.earlyTotals.expense,
+                      late:
+                        chronology.lateTotals.income -
+                        chronology.lateTotals.expense,
+                      kind: "net" as const,
+                      val: (t: TaggedFlowTotals) => t.income - t.expense,
+                    },
+                  ] as const
+                ).map((row) => {
+                  const dAbs = row.late - row.early;
+                  const dPct = deltaPctEarlyToLate(row.early, row.late);
+                  return (
+                    <tr
+                      key={row.label}
+                      className="border-b border-[color:var(--color-border)]/60"
+                    >
+                      <td className="sticky left-0 z-[1] bg-[color:var(--color-surface)] py-2.5 pr-3 font-medium shadow-[2px_0_8px_-4px_rgba(0,0,0,0.12)]">
+                        {row.label}
+                      </td>
+                      {monthlyContextSlices.map((slice, idx) => (
+                        <td
+                          key={`${slice.range.from.getTime()}-${row.label}-${idx}`}
+                          className={[
+                            "whitespace-nowrap px-2 py-2.5 tabular-nums",
+                            slice.isEarly || slice.isLate
+                              ? "border-x border-[color:var(--color-accent)]/25 bg-[color:var(--color-accent)]/[0.06]"
+                              : "",
+                          ].join(" ")}
+                        >
+                          {formatCurrency(row.val(slice.totals))}
+                        </td>
+                      ))}
+                      <td
+                        className={[
+                          "border-l border-[color:var(--color-border)] bg-[color:var(--color-surface-muted)]/20 py-2.5 pl-3 pr-2 tabular-nums font-medium",
+                          pctCls(row.kind, row.early, row.late),
+                        ].join(" ")}
+                      >
+                        {dAbs === 0
+                          ? formatCurrency(0)
+                          : `${dAbs > 0 ? "+" : "-"}${formatCurrency(Math.abs(dAbs))}`}
+                      </td>
+                      <td
+                        className={[
+                          "bg-[color:var(--color-surface-muted)]/20 py-2.5 pl-2 tabular-nums font-medium",
+                          pctCls(row.kind, row.early, row.late),
+                        ].join(" ")}
+                      >
+                        {formatDeltaPctIt(dPct)}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        ) : (
           <div className="mt-6 overflow-x-auto">
             <table className="w-full min-w-[560px] border-collapse text-left text-[13px]">
               <thead>
