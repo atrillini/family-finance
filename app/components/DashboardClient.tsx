@@ -994,6 +994,69 @@ export default function DashboardClient({
     });
   }, [selectedIds, transactions, configured]);
 
+  const handleBulkRefreshDescriptions = useCallback(async () => {
+    const ids = Array.from(selectedIds);
+    if (ids.length === 0) return;
+    if (!configured) {
+      toast.error("Disponibile solo con Supabase configurato.");
+      return;
+    }
+
+    const selectedRows = transactions.filter((t) => ids.includes(t.id));
+    if (selectedRows.length === 0) return;
+    const accountIds = [
+      ...new Set(
+        selectedRows.map((t) => (t.account_id ?? "").trim()).filter(Boolean)
+      ),
+    ];
+    if (accountIds.length !== 1) {
+      toast.error("Seleziona movimenti di un solo conto", {
+        description:
+          "Il refresh batch usa una chiamata banca per conto; seleziona un account alla volta.",
+      });
+      return;
+    }
+
+    const accountId = accountIds[0]!;
+    setBulkBusy("refresh-descriptions");
+    const toastId = toast.loading(
+      `Aggiorno ${ids.length} transazioni da banca (batch)…`
+    );
+    try {
+      const resp = await fetch("/api/refresh-descriptions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          accountId,
+          onlyIds: ids,
+          recategorizeAltro: false,
+        }),
+      });
+      const json = (await resp.json()) as {
+        error?: string;
+        report?: { updated: number; matched: number };
+      };
+      if (!resp.ok) {
+        throw new Error(
+          json?.error ?? "Errore durante il refresh descrizioni batch."
+        );
+      }
+      const updated = Number(json?.report?.updated ?? 0);
+      const matched = Number(json?.report?.matched ?? 0);
+      toast.success("Refresh descrizioni completato", {
+        id: toastId,
+        description: `${updated} aggiornate su ${matched} selezionate (1 chiamata banca).`,
+      });
+    } catch (err) {
+      toast.error("Refresh descrizioni fallito", {
+        id: toastId,
+        description: err instanceof Error ? err.message : String(err),
+      });
+    } finally {
+      setBulkBusy(null);
+    }
+  }, [selectedIds, transactions, configured]);
+
   const bulkUpdateFields = useCallback(
     async (
       patch: Partial<
@@ -1630,6 +1693,7 @@ export default function DashboardClient({
         busy={bulkBusy}
         onClear={clearSelection}
         onRecategorize={handleBulkRecategorize}
+        onRefreshDescriptions={handleBulkRefreshDescriptions}
         onDelete={handleBulkDelete}
         onToggleTransfer={handleBulkToggleTransfer}
         onSetCategory={handleBulkSetCategory}
