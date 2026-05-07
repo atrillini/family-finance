@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertCircle,
   ArrowRightLeft,
+  Copy,
   Loader2,
   RefreshCw,
   Repeat,
@@ -81,6 +82,7 @@ export default function EditTransactionModal({
   const [busy, setBusy] = useState<"saving" | "deleting" | null>(null);
   const [bankBusy, setBankBusy] = useState<"reparse" | "refresh" | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [showPayload, setShowPayload] = useState(false);
 
   // --- Stato per il pannello "Salva come regola" ---------------------------
   // È un mini-form in-line dentro al modal: quando l'utente clicca
@@ -113,6 +115,7 @@ export default function EditTransactionModal({
     setIsTransfer(Boolean(transaction.is_transfer));
     setBusy(null);
     setError(null);
+    setShowPayload(false);
     // Reset del mini-form "Salva come regola": si chiude di default ogni
     // volta che apri una nuova transazione.
     setRuleOpen(false);
@@ -165,6 +168,14 @@ export default function EditTransactionModal({
 
   const showReparse = Boolean(onReparseFromPayload) && hasBankPayload;
   const showBankRefresh = canRefreshFromBank;
+  const payloadPretty = useMemo(() => {
+    if (!hasBankPayload) return "";
+    try {
+      return JSON.stringify(transaction?.bank_payload, null, 2);
+    } catch {
+      return String(transaction?.bank_payload);
+    }
+  }, [hasBankPayload, transaction?.bank_payload]);
 
   async function handleReparseFromSaved() {
     if (!transaction || !onReparseFromPayload) return;
@@ -197,6 +208,16 @@ export default function EditTransactionModal({
       toast.error("Refresh dalla banca fallito", { description: msg });
     } finally {
       setBankBusy(null);
+    }
+  }
+
+  async function handleCopyPayload() {
+    if (!payloadPretty) return;
+    try {
+      await navigator.clipboard.writeText(payloadPretty);
+      toast.success("JSON copiato negli appunti.");
+    } catch {
+      toast.error("Impossibile copiare il JSON.");
     }
   }
 
@@ -589,6 +610,34 @@ export default function EditTransactionModal({
                   Per questa transazione non abbiamo ancora salvato il JSON grezzo:
                   usa «Riscarica dalla banca» oppure sincronizza l&apos;account.
                 </p>
+              ) : null}
+              {hasBankPayload ? (
+                <div className="mt-3">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setShowPayload((v) => !v)}
+                      className="inline-flex h-8 items-center rounded-lg border border-[color:var(--color-border)] bg-[color:var(--color-surface)] px-2.5 text-[12px] font-medium hover:bg-[color:var(--color-surface-muted)]"
+                    >
+                      {showPayload ? "Nascondi JSON salvato" : "Mostra JSON salvato"}
+                    </button>
+                    {showPayload ? (
+                      <button
+                        type="button"
+                        onClick={handleCopyPayload}
+                        className="inline-flex h-8 items-center gap-1 rounded-lg border border-[color:var(--color-border)] bg-[color:var(--color-surface)] px-2.5 text-[12px] font-medium hover:bg-[color:var(--color-surface-muted)]"
+                      >
+                        <Copy className="h-3.5 w-3.5" />
+                        Copia JSON
+                      </button>
+                    ) : null}
+                  </div>
+                  {showPayload ? (
+                    <pre className="mt-2 max-h-56 overflow-auto rounded-lg border border-[color:var(--color-border)] bg-black/40 p-2.5 text-[11px] leading-relaxed text-zinc-100">
+                      {payloadPretty}
+                    </pre>
+                  ) : null}
+                </div>
               ) : null}
             </div>
           ) : null}

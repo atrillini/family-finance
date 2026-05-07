@@ -5,6 +5,7 @@ import {
   ArrowRightLeft,
   ChevronDown,
   Loader2,
+  RefreshCw,
   Sparkles,
   Tag,
   Trash2,
@@ -24,6 +25,8 @@ type Props = {
   accounts?: Account[];
   /** Ricategorizza con IA tutte le transazioni selezionate. */
   onRecategorize: () => Promise<void> | void;
+  /** Refresh descrizioni via account-level endpoint usando onlyIds selezionati. */
+  onRefreshDescriptions?: () => Promise<void> | void;
   /** Marca/smarca giroconto in massa. Se non passata, il pulsante non compare. */
   onToggleTransfer?: (isTransfer: boolean) => Promise<void> | void;
   /** Applica una categoria manuale. */
@@ -51,6 +54,7 @@ export default function BulkActionsBar({
   count,
   accounts = [],
   onRecategorize,
+  onRefreshDescriptions,
   onToggleTransfer,
   onSetCategory,
   onSetAccount,
@@ -84,6 +88,16 @@ export default function BulkActionsBar({
         >
           Categorizza con IA
         </ActionButton>
+
+        {onRefreshDescriptions ? (
+          <ActionButton
+            onClick={onRefreshDescriptions}
+            icon={<RefreshCw className="h-3.5 w-3.5" />}
+            loading={busy === "refresh-descriptions"}
+          >
+            Aggiorna da banca (batch)
+          </ActionButton>
+        ) : null}
 
         {onToggleTransfer ? (
           <div className="flex items-center gap-1">

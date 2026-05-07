@@ -790,6 +790,74 @@ export default function TransactionsClient({
     });
   }, [selectedIds, transactions, configured]);
 
+  const handleBulkRefreshDescriptions = useCallback(async () => {
+    const ids = Array.from(selectedIds);
+    if (ids.length === 0) return;
+    if (!configured) {
+      toast.error("Disponibile solo con Supabase configurato.");
+      return;
+    }
+
+    const selectedRows = transactions.filter((t) => ids.includes(t.id));
+    if (selectedRows.length === 0) return;
+
+    const accountIds = [
+      ...new Set(
+        selectedRows.map((t) => (t.account_id ?? "").trim()).filter(Boolean)
+      ),
+    ];
+    if (accountIds.length !== 1) {
+      toast.error("Seleziona righe di un solo conto", {
+        description:
+          "Per rispettare i limiti della banca, il refresh batch lavora un conto alla volta.",
+      });
+      return;
+    }
+
+    const accountId = accountIds[0]!;
+    setBulkBusy("refresh-descriptions");
+    const toastId = toast.loading(
+      `Aggiorno ${ids.length} transazioni da banca (1 chiamata conto)…`
+    );
+    try {
+      const resp = await fetch("/api/refresh-descriptions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          accountId,
+          onlyIds: ids,
+          recategorizeAltro: false,
+        }),
+      });
+      const json = (await resp.json()) as {
+        error?: string;
+        report?: {
+          updated: number;
+          matched: number;
+          fetched: number;
+        };
+      };
+      if (!resp.ok) {
+        throw new Error(
+          json?.error ?? "Errore durante il refresh descrizioni batch."
+        );
+      }
+      const updated = Number(json?.report?.updated ?? 0);
+      const matched = Number(json?.report?.matched ?? 0);
+      toast.success("Refresh descrizioni completato", {
+        id: toastId,
+        description: `${updated} aggiornate su ${matched} selezionate (1 chiamata banca).`,
+      });
+    } catch (err) {
+      toast.error("Refresh descrizioni fallito", {
+        id: toastId,
+        description: err instanceof Error ? err.message : String(err),
+      });
+    } finally {
+      setBulkBusy(null);
+    }
+  }, [selectedIds, transactions, configured]);
+
   const bulkUpdateFields = useCallback(
     async (
       patch: Partial<
@@ -1054,6 +1122,7 @@ export default function TransactionsClient({
         busy={bulkBusy}
         onClear={clearSelection}
         onRecategorize={handleBulkRecategorize}
+        onRefreshDescriptions={handleBulkRefreshDescriptions}
         onDelete={handleBulkDelete}
         onToggleTransfer={handleBulkToggleTransfer}
         onSetCategory={handleBulkSetCategory}
