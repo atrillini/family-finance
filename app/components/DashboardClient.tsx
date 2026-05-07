@@ -25,6 +25,7 @@ import {
   computeAccountsTotal,
   computeMonthlySummary,
   computePocketTotal,
+  formatCurrency,
   type Account,
   type Transaction,
 } from "@/lib/mock-data";
@@ -1429,13 +1430,34 @@ export default function DashboardClient({
         if (!resp.ok || !json?.ok) {
           throw new Error(json?.error ?? "Errore durante la sincronizzazione.");
         }
-        const inserted = Number(json.report?.inserted ?? 0);
+        const report = (json.report ?? {}) as {
+          fetched?: number;
+          inserted?: number;
+          skipped?: number;
+          balance?: number | null;
+          lastSyncAt?: string;
+        };
+        const fetched = Number(report.fetched ?? 0);
+        const inserted = Number(report.inserted ?? 0);
+        const skipped = Number(report.skipped ?? 0);
+        const bankBalance =
+          typeof report.balance === "number" && Number.isFinite(report.balance)
+            ? formatCurrency(report.balance)
+            : "n/d";
+        console.info("[dashboard/sync] report", {
+          account: account.name,
+          fetched,
+          inserted,
+          skipped,
+          balance: report.balance ?? null,
+          lastSyncAt: report.lastSyncAt ?? null,
+        });
         toast.success(`${account.name} sincronizzato`, {
           id: toastId,
           description:
             inserted > 0
-              ? `${inserted} nuove transazioni importate e categorizzate.`
-              : "Nessuna nuova transazione: tutto già aggiornato.",
+              ? `${inserted} nuove importate · lette ${fetched} · duplicate/skippate ${skipped} · saldo banca ${bankBalance}.`
+              : `Nessuna nuova transazione · lette ${fetched} · duplicate/skippate ${skipped} · saldo banca ${bankBalance}.`,
         });
       } catch (err) {
         toast.error(`Sync di ${account.name} fallito`, {
