@@ -89,16 +89,6 @@ export default function BulkActionsBar({
           Categorizza con IA
         </ActionButton>
 
-        {onRefreshDescriptions ? (
-          <ActionButton
-            onClick={onRefreshDescriptions}
-            icon={<RefreshCw className="h-3.5 w-3.5" />}
-            loading={busy === "refresh-descriptions"}
-          >
-            Aggiorna da banca (batch)
-          </ActionButton>
-        ) : null}
-
         {onToggleTransfer ? (
           <div className="flex items-center gap-1">
             <ActionButton
@@ -240,6 +230,15 @@ export default function BulkActionsBar({
         >
           Elimina
         </ActionButton>
+        {onRefreshDescriptions ? (
+          <ActionButton
+            onClick={onRefreshDescriptions}
+            icon={<RefreshCw className="h-3.5 w-3.5" />}
+            loading={busy === "refresh-descriptions"}
+          >
+            Refresh banca
+          </ActionButton>
+        ) : null}
 
         <div className="ml-auto flex items-center">
           <button
