@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import {
   AlertCircle,
+  Bug,
   Link2Off,
   Loader2,
   PiggyBank,
@@ -52,6 +53,21 @@ type Props = {
     id: string,
     options: { recategorizeAltro: boolean }
   ) => Promise<void> | void;
+  onDebugFeed?: (id: string) => Promise<{
+    gocardlessAccountId: string | null;
+    requisitionId: string | null;
+    consentExpiresAt: string | null;
+    lastSyncAtDb: string | null;
+    dbBalance: number | null;
+    bookedCount: number;
+    pendingCount: number;
+    latestTxDate: string | null;
+    balanceCandidates: Array<{
+      type: string;
+      amount: number;
+      referenceDate: string | null;
+    }>;
+  }>;
 };
 
 /**
@@ -77,6 +93,7 @@ export default function EditAccountModal({
   onSave,
   onDisconnect,
   onRefreshDescriptions,
+  onDebugFeed,
 }: Props) {
   const open = Boolean(account);
   const dialogRef = useRef<HTMLDivElement | null>(null);
@@ -91,6 +108,22 @@ export default function EditAccountModal({
   const [confirmingDisconnect, setConfirmingDisconnect] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [refreshRecategorize, setRefreshRecategorize] = useState(true);
+  const [debugBusy, setDebugBusy] = useState(false);
+  const [debugData, setDebugData] = useState<{
+    gocardlessAccountId: string | null;
+    requisitionId: string | null;
+    consentExpiresAt: string | null;
+    lastSyncAtDb: string | null;
+    dbBalance: number | null;
+    bookedCount: number;
+    pendingCount: number;
+    latestTxDate: string | null;
+    balanceCandidates: Array<{
+      type: string;
+      amount: number;
+      referenceDate: string | null;
+    }>;
+  } | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -112,6 +145,8 @@ export default function EditAccountModal({
     setConfirmingDisconnect(false);
     setRefreshing(false);
     setRefreshRecategorize(true);
+    setDebugBusy(false);
+    setDebugData(null);
     setError(null);
   }, [account]);
 
@@ -327,6 +362,76 @@ export default function EditAccountModal({
                   </>
                 )}
               </button>
+            </div>
+          ) : null}
+
+          {onDebugFeed && account.requisition_id ? (
+            <div className="rounded-xl border border-[color:var(--color-border)] bg-[color:var(--color-surface-muted)]/40 p-3">
+              <div className="flex items-center gap-2 text-[13px] font-semibold">
+                <Bug className="h-4 w-4 text-[color:var(--color-accent)]" />
+                Debug feed banca
+              </div>
+              <p className="mt-1 text-[12px] text-[color:var(--color-muted-foreground)]">
+                Mostra metadati tecnici del feed GoCardless (count booked/pending,
+                ultima data vista, saldo candidato) per capire account stale o mismatch.
+              </p>
+              <button
+                type="button"
+                disabled={busy || disconnecting || refreshing || debugBusy}
+                onClick={async () => {
+                  if (!account || !onDebugFeed) return;
+                  setDebugBusy(true);
+                  setError(null);
+                  try {
+                    const data = await onDebugFeed(account.id);
+                    setDebugData(data);
+                  } catch (err) {
+                    setError(
+                      err instanceof Error
+                        ? err.message
+                        : "Impossibile leggere il debug feed."
+                    );
+                  } finally {
+                    setDebugBusy(false);
+                  }
+                }}
+                className="mt-3 inline-flex h-9 items-center gap-2 rounded-lg border border-[color:var(--color-accent)]/40 bg-[color:var(--color-accent)]/10 px-3 text-[12px] font-semibold text-[color:var(--color-accent)] transition-colors hover:bg-[color:var(--color-accent)]/15 disabled:opacity-50"
+              >
+                {debugBusy ? (
+                  <>
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    Carico debug…
+                  </>
+                ) : (
+                  <>
+                    <Bug className="h-3.5 w-3.5" />
+                    Leggi debug feed
+                  </>
+                )}
+              </button>
+              {debugData ? (
+                <div className="mt-3 rounded-lg border border-[color:var(--color-border)] bg-[color:var(--color-surface)] p-2.5 text-[11.5px] leading-relaxed">
+                  <p><strong>GoCardless account:</strong> {debugData.gocardlessAccountId ?? "—"}</p>
+                  <p><strong>Requisition:</strong> {debugData.requisitionId ?? "—"}</p>
+                  <p><strong>Consenso scade:</strong> {debugData.consentExpiresAt ?? "—"}</p>
+                  <p><strong>Ultimo sync DB:</strong> {debugData.lastSyncAtDb ?? "—"}</p>
+                  <p><strong>Saldo DB:</strong> {debugData.dbBalance ?? "—"}</p>
+                  <p><strong>Booked/Pending:</strong> {debugData.bookedCount} / {debugData.pendingCount}</p>
+                  <p><strong>Ultima data transazione feed:</strong> {debugData.latestTxDate ?? "—"}</p>
+                  <p className="mt-1.5 font-semibold">Balance candidates feed:</p>
+                  {debugData.balanceCandidates.length === 0 ? (
+                    <p>—</p>
+                  ) : (
+                    <ul className="list-disc pl-4">
+                      {debugData.balanceCandidates.map((b, i) => (
+                        <li key={`${b.type}-${i}`}>
+                          {b.type}: {b.amount} ({b.referenceDate ?? "senza data"})
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              ) : null}
             </div>
           ) : null}
 

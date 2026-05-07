@@ -1325,6 +1325,36 @@ export default function DashboardClient({
     []
   );
 
+  const handleDebugFeed = useCallback(async (accountId: string) => {
+    const resp = await fetch(
+      `/api/accounts/${encodeURIComponent(accountId)}/debug-feed`,
+      { method: "GET" }
+    );
+    const json = (await resp.json()) as {
+      ok?: boolean;
+      error?: string;
+      debug?: {
+        gocardlessAccountId: string | null;
+        requisitionId: string | null;
+        consentExpiresAt: string | null;
+        lastSyncAtDb: string | null;
+        dbBalance: number | null;
+        bookedCount: number;
+        pendingCount: number;
+        latestTxDate: string | null;
+        balanceCandidates: Array<{
+          type: string;
+          amount: number;
+          referenceDate: string | null;
+        }>;
+      };
+    };
+    if (!resp.ok || !json?.ok || !json.debug) {
+      throw new Error(json?.error ?? "Impossibile leggere il debug feed.");
+    }
+    return json.debug;
+  }, []);
+
   // ---------------------------------------------------------------------------
   // Cleanup storico: chiamata una-tantum che rimuove tutte le transazioni
   // precedenti al floor (di default 1° gennaio 2026). Serve quando l'utente
@@ -1748,6 +1778,7 @@ export default function DashboardClient({
         onSave={handleAccountSave}
         onDisconnect={handleAccountDisconnect}
         onRefreshDescriptions={handleRefreshDescriptions}
+        onDebugFeed={handleDebugFeed}
       />
 
       <ConnectBankDialog
