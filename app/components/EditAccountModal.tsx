@@ -109,6 +109,7 @@ export default function EditAccountModal({
   const [deleteTransactions, setDeleteTransactions] = useState(false);
   const [deleteAccount, setDeleteAccount] = useState(false);
   const [confirmingDisconnect, setConfirmingDisconnect] = useState(false);
+  const [confirmingDeleteOnly, setConfirmingDeleteOnly] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [refreshRecategorize, setRefreshRecategorize] = useState(true);
   const [debugBusy, setDebugBusy] = useState(false);
@@ -149,6 +150,7 @@ export default function EditAccountModal({
     setDeleteTransactions(false);
     setDeleteAccount(false);
     setConfirmingDisconnect(false);
+    setConfirmingDeleteOnly(false);
     setRefreshing(false);
     setRefreshRecategorize(true);
     setDebugBusy(false);
@@ -540,6 +542,81 @@ export default function EditAccountModal({
                 >
                   <Link2Off className="h-3.5 w-3.5" />
                   Scollega questa banca
+                </button>
+              )}
+            </div>
+          ) : null}
+
+          {onDisconnect && !account.requisition_id ? (
+            <div className="rounded-xl border border-[color:var(--color-expense)]/30 bg-[color:var(--color-expense)]/8 p-3">
+              <div className="flex items-center gap-2 text-[13px] font-semibold text-[color:var(--color-expense)]">
+                <Trash2 className="h-4 w-4" />
+                Elimina conto scollegato
+              </div>
+              <p className="mt-1 text-[12px] text-[color:var(--color-muted-foreground)]">
+                Questo conto non è più collegato alla banca. Puoi rimuovere solo
+                la card conto dal database.
+              </p>
+              {confirmingDeleteOnly ? (
+                <div className="mt-3 rounded-lg border border-[color:var(--color-expense)]/40 bg-[color:var(--color-expense)]/10 px-3 py-2 text-[12px] text-[color:var(--color-expense)]">
+                  Confermi l&apos;eliminazione del conto?
+                  <div className="mt-2 flex gap-2">
+                    <button
+                      type="button"
+                      disabled={disconnecting}
+                      onClick={() => setConfirmingDeleteOnly(false)}
+                      className="inline-flex h-8 items-center rounded-lg border border-[color:var(--color-border)] bg-[color:var(--color-surface)] px-3 text-[12px] font-medium"
+                    >
+                      Annulla
+                    </button>
+                    <button
+                      type="button"
+                      disabled={disconnecting}
+                      onClick={async () => {
+                        if (!account || !onDisconnect) return;
+                        setDisconnecting(true);
+                        setError(null);
+                        try {
+                          await onDisconnect(account.id, {
+                            deleteTransactions: false,
+                            deleteAccount: true,
+                          });
+                          onClose();
+                        } catch (err) {
+                          setDisconnecting(false);
+                          setConfirmingDeleteOnly(false);
+                          setError(
+                            err instanceof Error
+                              ? err.message
+                              : "Impossibile eliminare il conto."
+                          );
+                        }
+                      }}
+                      className="inline-flex h-8 items-center gap-2 rounded-lg bg-[color:var(--color-expense)] px-3 text-[12px] font-semibold text-white disabled:opacity-50"
+                    >
+                      {disconnecting ? (
+                        <>
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          Eliminazione…
+                        </>
+                      ) : (
+                        <>
+                          <Trash2 className="h-3.5 w-3.5" />
+                          Sì, elimina conto
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  disabled={busy || disconnecting}
+                  onClick={() => setConfirmingDeleteOnly(true)}
+                  className="mt-3 inline-flex h-9 items-center gap-2 rounded-lg border border-[color:var(--color-expense)]/40 bg-[color:var(--color-expense)]/10 px-3 text-[12px] font-semibold text-[color:var(--color-expense)] transition-colors hover:bg-[color:var(--color-expense)]/15 disabled:opacity-50"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                  Elimina questo conto
                 </button>
               )}
             </div>
