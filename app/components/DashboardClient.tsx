@@ -1355,6 +1355,41 @@ export default function DashboardClient({
     return json.debug;
   }, []);
 
+  const handlePurgeAccountTransactions = useCallback(
+    async (accountId: string) => {
+      const pending = toast.loading("Elimino transazioni del conto…");
+      try {
+        const resp = await fetch(
+          `/api/accounts/${encodeURIComponent(accountId)}/purge-transactions`,
+          { method: "DELETE" }
+        );
+        const json = (await resp.json()) as {
+          error?: string;
+          transactionsDeleted?: number;
+        };
+        if (!resp.ok) {
+          throw new Error(
+            json?.error ?? "Impossibile eliminare le transazioni del conto."
+          );
+        }
+        const deleted = Number(json?.transactionsDeleted ?? 0);
+        toast.success("Transazioni conto eliminate", {
+          id: pending,
+          description: `${deleted} righe rimosse.`,
+        });
+        // Feedback immediato in UI; il realtime copre anche gli altri client.
+        setTransactions((cur) => cur.filter((t) => t.account_id !== accountId));
+      } catch (err) {
+        toast.error("Eliminazione transazioni fallita", {
+          id: pending,
+          description: err instanceof Error ? err.message : String(err),
+        });
+        throw err;
+      }
+    },
+    []
+  );
+
   // ---------------------------------------------------------------------------
   // Cleanup storico: chiamata una-tantum che rimuove tutte le transazioni
   // precedenti al floor (di default 1° gennaio 2026). Serve quando l'utente
@@ -1779,6 +1814,7 @@ export default function DashboardClient({
         onDisconnect={handleAccountDisconnect}
         onRefreshDescriptions={handleRefreshDescriptions}
         onDebugFeed={handleDebugFeed}
+        onPurgeTransactions={handlePurgeAccountTransactions}
       />
 
       <ConnectBankDialog

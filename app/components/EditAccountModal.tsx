@@ -68,6 +68,8 @@ type Props = {
       referenceDate: string | null;
     }>;
   }>;
+  /** Elimina tutte le transazioni del conto (senza scollegarlo). */
+  onPurgeTransactions?: (id: string) => Promise<void> | void;
 };
 
 /**
@@ -94,6 +96,7 @@ export default function EditAccountModal({
   onDisconnect,
   onRefreshDescriptions,
   onDebugFeed,
+  onPurgeTransactions,
 }: Props) {
   const open = Boolean(account);
   const dialogRef = useRef<HTMLDivElement | null>(null);
@@ -109,6 +112,9 @@ export default function EditAccountModal({
   const [refreshing, setRefreshing] = useState(false);
   const [refreshRecategorize, setRefreshRecategorize] = useState(true);
   const [debugBusy, setDebugBusy] = useState(false);
+  const [purgingTransactions, setPurgingTransactions] = useState(false);
+  const [confirmingPurgeTransactions, setConfirmingPurgeTransactions] =
+    useState(false);
   const [debugData, setDebugData] = useState<{
     gocardlessAccountId: string | null;
     requisitionId: string | null;
@@ -146,6 +152,8 @@ export default function EditAccountModal({
     setRefreshing(false);
     setRefreshRecategorize(true);
     setDebugBusy(false);
+    setPurgingTransactions(false);
+    setConfirmingPurgeTransactions(false);
     setDebugData(null);
     setError(null);
   }, [account]);
@@ -532,6 +540,78 @@ export default function EditAccountModal({
                 >
                   <Link2Off className="h-3.5 w-3.5" />
                   Scollega questa banca
+                </button>
+              )}
+            </div>
+          ) : null}
+
+          {onPurgeTransactions ? (
+            <div className="rounded-xl border border-[color:var(--color-expense)]/30 bg-[color:var(--color-expense)]/8 p-3">
+              <div className="flex items-center gap-2 text-[13px] font-semibold text-[color:var(--color-expense)]">
+                <Trash2 className="h-4 w-4" />
+                Svuota transazioni del conto
+              </div>
+              <p className="mt-1 text-[12px] text-[color:var(--color-muted-foreground)]">
+                Elimina in blocco tutte le transazioni associate a questo conto.
+                Il conto resta visibile e, se collegato, potrai risincronizzarlo.
+              </p>
+              {confirmingPurgeTransactions ? (
+                <div className="mt-3 rounded-lg border border-[color:var(--color-expense)]/40 bg-[color:var(--color-expense)]/10 px-3 py-2 text-[12px] text-[color:var(--color-expense)]">
+                  Confermi l&apos;eliminazione di tutte le transazioni del conto?
+                  <div className="mt-2 flex gap-2">
+                    <button
+                      type="button"
+                      disabled={purgingTransactions}
+                      onClick={() => setConfirmingPurgeTransactions(false)}
+                      className="inline-flex h-8 items-center rounded-lg border border-[color:var(--color-border)] bg-[color:var(--color-surface)] px-3 text-[12px] font-medium"
+                    >
+                      Annulla
+                    </button>
+                    <button
+                      type="button"
+                      disabled={purgingTransactions}
+                      onClick={async () => {
+                        if (!account || !onPurgeTransactions) return;
+                        setPurgingTransactions(true);
+                        setError(null);
+                        try {
+                          await onPurgeTransactions(account.id);
+                          setPurgingTransactions(false);
+                          setConfirmingPurgeTransactions(false);
+                        } catch (err) {
+                          setPurgingTransactions(false);
+                          setError(
+                            err instanceof Error
+                              ? err.message
+                              : "Impossibile eliminare le transazioni."
+                          );
+                        }
+                      }}
+                      className="inline-flex h-8 items-center gap-2 rounded-lg bg-[color:var(--color-expense)] px-3 text-[12px] font-semibold text-white disabled:opacity-50"
+                    >
+                      {purgingTransactions ? (
+                        <>
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          Eliminazione…
+                        </>
+                      ) : (
+                        <>
+                          <Trash2 className="h-3.5 w-3.5" />
+                          Sì, elimina tutto
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  disabled={busy || disconnecting || refreshing || debugBusy}
+                  onClick={() => setConfirmingPurgeTransactions(true)}
+                  className="mt-3 inline-flex h-9 items-center gap-2 rounded-lg border border-[color:var(--color-expense)]/40 bg-[color:var(--color-expense)]/10 px-3 text-[12px] font-semibold text-[color:var(--color-expense)] transition-colors hover:bg-[color:var(--color-expense)]/15 disabled:opacity-50"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                  Elimina tutte le transazioni
                 </button>
               )}
             </div>
